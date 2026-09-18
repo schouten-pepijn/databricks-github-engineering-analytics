@@ -1,22 +1,44 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
+from typing import ClassVar
 from datetime import datetime
 
 import requests
+from tenacity import (
+    Retrying,
+    retry_if_exception_type,
+    stop_after_attempt,
+    wait_exponential,
+)
 
 
 class GitHubApiError(RuntimeError):
-    pass
+    """Base exception for GitHub API errors."""
 
 
-class GitHubApiClient:
+class GitHubRetryableError(GitHubApiError):
+    """Base exception for retryable GitHub API errors."""
+
+
+class GitHubRateLimitError(GitHubRetryableError):
+    """Raised when GitHub rate limiting is encountered."""
+
+
+class GitHubServerError(GitHubRetryableError):
+    """Raised for retryable GitHub 5xx responses."""
+
+
+class GitHubClient:
     BASE_URL = "https://api.github.com"
+
+    RETRYABLE_STATUS_CODES: ClassVar[set[int]] = {500, 502, 503, 504}
 
     def __init__(
         self,
         token: str | None = None,
         timeout_seconds: int = 30,
+        max_attempts: int = 5,
     ) -> None:
         self.timeout_seconds = timeout_seconds
 
@@ -32,15 +54,86 @@ class GitHubApiClient:
         self.session = requests.Session()
         self.session.headers.update(headers)
 
+        self.retrying = Retrying(
+            retry=retry_if_exception_type(
+                (
+                    GitHubRetryableError,
+                    requests.Timeout,
+                    requests.ConnectionError,
+                )
+            ),
+            stop=stop_after_attempt(max_attempts),
+            wait=wait_exponential(
+                multiplier=1,
+                min=1,
+                max=30,
+            ),
+            reraise=True,
+        )
+
+    def _request(
+        self,
+        method: str,
+        url: str,
+        **kwargs,
+    ) -> requests.Response:
+        return self.retrying(
+            self._request_once,
+            method,
+            url,
+            **kwargs,
+        )
+
+    def _request_once(
+        self,
+        method: str,
+        url: str,
+        **kwargs,
+    ) -> requests.Response:
+        response = self.session.request(
+            method=method,
+            url=url,
+            timeout=self.timeout_seconds,
+            **kwargs,
+        )
+
+        if self._is_rate_limited(response):
+            raise GitHubRateLimitError(f"GitHub API rate limit exceeded: {response.status_code} {response.text}")
+
+        if response.status_code in self.RETRYABLE_STATUS_CODES:
+            raise GitHubServerError(f"GitHub server error: {response.status_code} {response.text}")
+
+        if not response.ok:
+            raise GitHubApiError(f"GitHub API request failed: {response.status_code} {response.text}")
+
+        return response
+
+    @staticmethod
+    def _is_rate_limited(
+        response: requests.Response,
+    ) -> bool:
+        if response.status_code == 429:
+            return True
+
+        if response.status_code == 403:
+            remaining = response.headers.get("X-RateLimit-Remaining")
+
+            if remaining == "0":
+                return True
+
+        return False
+
     def iter_issues(
         self,
         owner: str,
-        repo: str,
+        repository: str,
         since: datetime | None = None,
         per_page: int = 100,
-        max_pages: int | None = None,
     ) -> Iterator[dict]:
-        url = f"{self.BASE_URL}/repos/{owner}/{repo}/issues"
+        if not 1 <= per_page <= 100:
+            raise ValueError("per_page must be between 1 and 100")
+
+        url = f"{self.BASE_URL}/repos/{owner}/{repository}/issues"
 
         params: dict[str, str | int] = {
             "state": "all",
@@ -54,16 +147,16 @@ class GitHubApiClient:
             params["since"] = since.isoformat().replace("+00:00", "Z")
 
         while True:
-            response = self.session.get(
-                url,
-                params=params,
-                timeout=self.timeout_seconds,
+            response = self._request(
+                method="GET",
+                url=url,
+                params=params.copy(),
             )
 
-            if not response.ok:
-                raise GitHubApiError(f"GitHub API request failed: {response.status_code} {response.text}")
-
             records = response.json()
+
+            if not isinstance(records, list):
+                raise GitHubApiError("Expected GitHub API response to contain a list of issues.")
 
             if not records:
                 break
