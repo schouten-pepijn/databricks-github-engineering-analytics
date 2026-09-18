@@ -10,6 +10,7 @@ dependencies = [
     # LIMITATION: for pipelines, dependencies are cached during development;
     # add dependencies to the 'environment' section of your pipeline.yml file instead
     "requests>=2.34.2",
+    "tenacity>=9.1.4",
 ]
 
 [dependency-groups]
