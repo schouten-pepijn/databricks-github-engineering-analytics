@@ -29,6 +29,7 @@ targets:
     default: true
     workspace:
       host: https://dbc-bcaf62db-c2ea.cloud.databricks.com
+      profile: databricks-dev
     variables:
       catalog: main
       schema: ${workspace.current_user.short_name}
