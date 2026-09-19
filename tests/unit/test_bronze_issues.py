@@ -192,3 +192,51 @@ def test_delta_bronze_issue_writer_rejects_non_utc_session() -> None:
         writer.ensure_table()
 
     spark.sql.assert_not_called()
+
+
+def test_delta_bronze_issue_writer_appends_records() -> None:
+    spark = Mock()
+    spark.conf.get.return_value = "UTC"
+    writer = DeltaBronzeIssueWriter(
+        spark=spark,
+        config=PipelineConfig(catalog="test_catalog"),
+    )
+    record = BronzeIssueRecord.from_github_payload(
+        repository_owner="delta-io",
+        repository_name="delta",
+        payload={
+            "id": 123,
+            "updated_at": "2026-09-20T12:03:00Z",
+        },
+        run_id="run-123",
+        ingested_at=datetime(2026, 9, 20, 12, 5, tzinfo=UTC),
+        request_watermark=datetime(2026, 9, 20, 11, 55, tzinfo=UTC),
+        page_or_batch_reference="page-1",
+    )
+
+    dataframe = Mock()
+    spark.createDataFrame.return_value = dataframe
+
+    writer.append([record])
+
+    spark.createDataFrame.assert_called_once_with(
+        [
+            (
+                "delta-io",
+                "delta",
+                123,
+                datetime(2026, 9, 20, 12, 3, tzinfo=UTC),
+                '{"id":123,"updated_at":"2026-09-20T12:03:00Z"}',
+                "run-123",
+                datetime(2026, 9, 20, 12, 5, tzinfo=UTC),
+                datetime(2026, 9, 20, 11, 55, tzinfo=UTC),
+                "page-1",
+            )
+        ],
+        schema=DeltaBronzeIssueWriter._ROW_SCHEMA,
+    )
+    dataframe.write.format.assert_called_once_with("delta")
+    dataframe.write.format.return_value.mode.assert_called_once_with("append")
+    dataframe.write.format.return_value.mode.return_value.saveAsTable.assert_called_once_with(
+        "test_catalog.github_analytics_bronze.github_issues_raw"
+    )

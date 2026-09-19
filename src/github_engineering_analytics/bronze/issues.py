@@ -9,6 +9,13 @@ from datetime import UTC, datetime
 from typing import ClassVar, Self
 
 from pyspark.sql import SparkSession
+from pyspark.sql.types import (
+    LongType,
+    StringType,
+    StructField,
+    StructType,
+    TimestampType,
+)
 
 from github_engineering_analytics.common.config import PipelineConfig
 
@@ -118,6 +125,20 @@ class DeltaBronzeIssueWriter:
 
     _UTC_TIMEZONES: ClassVar[frozenset[str]] = frozenset({"UTC", "Etc/UTC"})
 
+    _ROW_SCHEMA: ClassVar[StructType] = StructType(
+        [
+            StructField("repository_owner", StringType(), nullable=False),
+            StructField("repository_name", StringType(), nullable=False),
+            StructField("issue_id", LongType(), nullable=False),
+            StructField("source_updated_at", TimestampType(), nullable=False),
+            StructField("raw_json", StringType(), nullable=False),
+            StructField("_run_id", StringType(), nullable=False),
+            StructField("_ingested_at", TimestampType(), nullable=False),
+            StructField("_request_watermark", TimestampType(), nullable=True),
+            StructField("_page_or_batch_reference", StringType(), nullable=False),
+        ]
+    )
+
     def __init__(
         self,
         spark: SparkSession,
@@ -131,6 +152,30 @@ class DeltaBronzeIssueWriter:
         """Append records without deduplicating or modifying existing Bronze rows."""
         if not records:
             return
+
+        self._require_utc_session()
+
+        rows = [
+            (
+                record.repository_owner,
+                record.repository_name,
+                record.issue_id,
+                record.source_updated_at,
+                record.raw_json,
+                record.run_id,
+                record.ingested_at,
+                record.request_watermark,
+                record.page_or_batch_reference,
+            )
+            for record in records
+        ]
+
+        dataframe = self._spark.createDataFrame(
+            rows,
+            schema=self._ROW_SCHEMA,
+        )
+
+        dataframe.write.format("delta").mode("append").saveAsTable(self._table_name)
 
     def ensure_table(self) -> None:
         """Create the Bronze schema and append-only issue table when absent."""
