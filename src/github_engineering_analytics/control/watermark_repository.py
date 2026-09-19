@@ -117,7 +117,10 @@ class DeltaWatermarkRepository:
             )
 
         return Watermark(
-            value=watermark_value.replace(tzinfo=UTC),
+            # PySpark can return TimestampType values as naïve datetimes in
+            # the local timezone of the Python process. astimezone() restores
+            # the UTC instant; replace(tzinfo=UTC) would relabel it instead.
+            value=watermark_value.astimezone(UTC),
             overlap_seconds=int(overlap_seconds),
         )
 
