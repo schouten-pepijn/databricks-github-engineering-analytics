@@ -1,4 +1,4 @@
-"""Pure domain model for a single incremental pipeline run."""
+"""Pure domain model for the lifecycle of one incremental pipeline attempt."""
 
 from __future__ import annotations
 
@@ -22,9 +22,12 @@ class PipelineRun:
     """
     Describe one pipeline attempt before it is persisted.
 
-    A candidate watermark is observed during extraction. It may only be
-    committed after the run has succeeded and all required downstream
-    processing has completed.
+    ``candidate_watermark`` is observed during extraction; it is not a
+    committed position. The orchestrator may commit it only after this model
+    transitions to ``SUCCEEDED`` and all downstream processing has completed.
+
+    The model is immutable so callers retain an accurate record of the run's
+    prior state while moving through its lifecycle.
     """
 
     run_id: str
@@ -93,7 +96,7 @@ class PipelineRun:
 
     @property
     def extraction_start(self) -> datetime | None:
-        """Return the overlap-adjusted extraction position."""
+        """Return the overlap-adjusted position, or ``None`` for a first run."""
         if self.watermark_before is None:
             return None
 
@@ -104,7 +107,7 @@ class PipelineRun:
         candidate_watermark: Watermark | None,
         finished_at: datetime,
     ) -> PipelineRun:
-        """Return a successful copy of a running pipeline run."""
+        """Return a successful copy of this running run with its candidate value."""
         self._require_running()
 
         return replace(
@@ -119,7 +122,7 @@ class PipelineRun:
         error_message: str,
         finished_at: datetime,
     ) -> PipelineRun:
-        """Return a failed copy of a running pipeline run."""
+        """Return a failed copy of this running run with its failure reason."""
         self._require_running()
 
         return replace(

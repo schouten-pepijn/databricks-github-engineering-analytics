@@ -1,3 +1,5 @@
+"""GitHub REST client with bounded retries for transient failures."""
+
 from __future__ import annotations
 
 import time
@@ -64,6 +66,12 @@ class WaitGitHubRateLimit(wait_base):
 
 
 class GitHubClient:
+    """Retrieve GitHub repository data without exposing HTTP details to callers.
+
+    Authentication is optional to support public repositories. All requests use
+    a finite timeout and retry only failures that are expected to be transient.
+    """
+
     BASE_URL = "https://api.github.com"
 
     RETRYABLE_STATUS_CODES: ClassVar[set[int]] = {
@@ -79,6 +87,7 @@ class GitHubClient:
         timeout_seconds: int = 30,
         max_attempts: int = 5,
     ) -> None:
+        """Create a client with optional token authentication and bounded retries."""
         self.timeout_seconds = timeout_seconds
 
         headers = {
@@ -224,10 +233,11 @@ class GitHubClient:
         per_page: int = 100,
     ) -> Iterator[dict]:
         """
-        Iterate over GitHub issues for a repository.
+        Iterate over every issue record updated on or after ``since``.
 
-        GitHub's issues endpoint also returns pull requests. Those are
-        deliberately retained here and can be classified later in Silver.
+        GitHub's issues endpoint also returns pull requests. Retain both raw
+        record types here; Silver owns their classification. ``since`` must be
+        timezone-aware so the incremental extraction boundary is unambiguous.
         """
         if not 1 <= per_page <= 100:
             raise ValueError("per_page must be between 1 and 100")

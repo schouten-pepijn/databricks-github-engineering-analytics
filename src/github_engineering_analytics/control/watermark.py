@@ -6,7 +6,12 @@ from datetime import UTC, datetime, timedelta
 
 @dataclass(frozen=True)
 class Watermark:
-    """A successfully processed source position with a reprocessing overlap."""
+    """A committed source position and its deliberate reprocessing overlap.
+
+    ``value`` is always normalized to UTC. The next extraction begins before
+    it, allowing records updated near an earlier run's boundary to be read
+    again and handled idempotently downstream.
+    """
 
     value: datetime
     overlap_seconds: int = 300

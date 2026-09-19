@@ -19,10 +19,10 @@ from github_engineering_analytics.control.watermark import Watermark
 
 
 class DeltaWatermarkRepository:
-    """
-    Repository for managing watermark state in Delta Lake.
+    """Persist the latest successful incremental position in a Delta table.
 
-    Table grain: (source_name, entity_name)
+    The table grain is one row per ``(source_name, entity_name)``. A merge is
+    monotonic: a stale retry cannot move a committed watermark backwards.
     """
 
     _UTC_TIMEZONES: ClassVar[set[str]] = {"UTC", "Etc/UTC"}
@@ -49,7 +49,7 @@ class DeltaWatermarkRepository:
         self._table_name = config.watermark_table
 
     def ensure_table(self) -> None:
-        """Create the watermark table if it does not exist."""
+        """Create the control schema and Delta table when they are absent."""
 
         self._require_utc_session()
 
@@ -76,9 +76,9 @@ class DeltaWatermarkRepository:
         entity_name: str,
     ) -> Watermark | None:
         """
-        Return the last successfully committed watermark.
+        Return the last successfully committed watermark for an entity.
 
-        None means this source/entity has not been processed before.
+        ``None`` means this source/entity has not been processed before.
         """
 
         self._validate_key(source_name, entity_name)
@@ -117,9 +117,9 @@ class DeltaWatermarkRepository:
             )
 
         return Watermark(
-            # PySpark can return TimestampType values as naïve datetimes in
-            # the local timezone of the Python process. astimezone() restores
-            # the UTC instant; replace(tzinfo=UTC) would relabel it instead.
+            # PySpark returns a TimestampType as a local, naive Python value.
+            # astimezone() preserves its instant; replace(tzinfo=UTC) would
+            # incorrectly relabel a local clock time as UTC.
             value=watermark_value.astimezone(UTC),
             overlap_seconds=int(overlap_seconds),
         )
@@ -134,9 +134,10 @@ class DeltaWatermarkRepository:
         committed_at: datetime,
     ) -> None:
         """
-        Upsert a new watermark after downstream processing succeeded.
+        Commit a candidate watermark after all downstream processing succeeds.
 
-        A lower incoming watermark never overwrites a later committed one.
+        The merge permits only equal-or-later values, making retries and
+        out-of-order completions unable to regress the stored position.
         """
         self._validate_key(source_name, entity_name)
         self._require_utc_session()
@@ -204,6 +205,7 @@ class DeltaWatermarkRepository:
         )
 
     def _require_utc_session(self) -> None:
+        """Reject sessions that would interpret Delta TIMESTAMP values differently."""
         session_timezone = self._spark.conf.get("spark.sql.session.timeZone")
 
         if session_timezone not in self._UTC_TIMEZONES:
