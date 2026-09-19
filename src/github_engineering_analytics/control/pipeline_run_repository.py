@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from typing import ClassVar
 
+import pyspark.sql.functions as F
 from delta.tables import DeltaTable
-from pyspark.sql import SparkSession
+from pyspark.sql import DataFrame, SparkSession
 from pyspark.sql.types import (
     LongType,
     StringType,
@@ -98,39 +99,7 @@ class DeltaPipelineRunRepository:
 
         self._require_utc_session()
 
-        watermark_before = run.watermark_before
-        candidate_watermark = run.candidate_watermark
-
-        source = self._spark.createDataFrame(
-            [
-                (
-                    run.run_id,
-                    run.source_name,
-                    run.entity_name,
-                    run.status.value,
-                    run.started_at,
-                    run.finished_at,
-                    watermark_before.value if watermark_before is not None else None,
-                    (
-                        watermark_before.overlap_seconds
-                        if watermark_before is not None
-                        else None
-                    ),
-                    (
-                        candidate_watermark.value
-                        if candidate_watermark is not None
-                        else None
-                    ),
-                    (
-                        candidate_watermark.overlap_seconds
-                        if candidate_watermark is not None
-                        else None
-                    ),
-                    run.error_message,
-                )
-            ],
-            schema=self._ROW_SCHEMA,
-        )
+        source = self._create_source_dataframe(run)
 
         target = DeltaTable.forName(self._spark, self._table_name)
 
@@ -165,11 +134,12 @@ class DeltaPipelineRunRepository:
         )
 
     def record_finished(self, run: PipelineRun) -> None:
-        """Validate a terminal run before its guarded persistence is implemented.
+        """Transition an existing RUNNING row to a terminal lifecycle state.
 
-        This deliberately accepts only SUCCEEDED and FAILED states. The next
-        implementation step will update an existing RUNNING row, rather than
-        inserting a new row or overwriting a terminal state.
+        A preflight lookup makes missing and already terminal run IDs explicit
+        errors. The Delta condition repeats the RUNNING check so a concurrent
+        completion cannot overwrite a terminal row between that lookup and the
+        merge.
         """
         if run.status not in {
             PipelineRunStatus.SUCCEEDED,
@@ -180,6 +150,99 @@ class DeltaPipelineRunRepository:
             )
 
         self._require_utc_session()
+        self._require_existing_running_run(run.run_id)
+
+        source = self._create_source_dataframe(run)
+        target = DeltaTable.forName(self._spark, self._table_name)
+
+        (
+            target.alias("target")
+            .merge(
+                source.alias("source"),
+                "target.run_id = source.run_id",
+            )
+            .whenMatchedUpdate(
+                # Do not regress a row if another attempt finished it after
+                # the preflight lookup but before this merge was executed.
+                condition="target.status = 'running'",
+                set={
+                    "status": "source.status",
+                    "finished_at": "source.finished_at",
+                    "candidate_watermark_value": ("source.candidate_watermark_value"),
+                    "candidate_watermark_overlap_seconds": (
+                        "source.candidate_watermark_overlap_seconds"
+                    ),
+                    "error_message": "source.error_message",
+                },
+            )
+            .execute()
+        )
+
+    def _create_source_dataframe(self, run: PipelineRun) -> DataFrame:
+        """Serialize one immutable PipelineRun using the table's explicit schema."""
+        watermark_before = run.watermark_before
+        candidate_watermark = run.candidate_watermark
+
+        return self._spark.createDataFrame(
+            [
+                (
+                    run.run_id,
+                    run.source_name,
+                    run.entity_name,
+                    run.status.value,
+                    run.started_at,
+                    run.finished_at,
+                    watermark_before.value if watermark_before is not None else None,
+                    (
+                        watermark_before.overlap_seconds
+                        if watermark_before is not None
+                        else None
+                    ),
+                    (
+                        candidate_watermark.value
+                        if candidate_watermark is not None
+                        else None
+                    ),
+                    (
+                        candidate_watermark.overlap_seconds
+                        if candidate_watermark is not None
+                        else None
+                    ),
+                    run.error_message,
+                )
+            ],
+            schema=self._ROW_SCHEMA,
+        )
+
+    def _require_existing_running_run(self, run_id: str) -> None:
+        """Reject missing, duplicated, or already terminal lifecycle rows.
+
+        Fetching at most two rows detects a broken logical ``run_id`` key
+        without collecting the complete control table.
+        """
+        rows = (
+            self._spark.table(self._table_name)
+            .where(F.col("run_id") == run_id)
+            .select("status")
+            .limit(2)
+            .collect()
+        )
+
+        if not rows:
+            raise ValueError(f"Pipeline run not found: run_id={run_id!r}")
+
+        if len(rows) > 1:
+            raise RuntimeError(
+                f"Pipeline run table has duplicate run_id values: {run_id!r}"
+            )
+
+        status = rows[0]["status"]
+
+        if status != PipelineRunStatus.RUNNING.value:
+            raise ValueError(
+                "Pipeline run must be running before it can finish: "
+                f"run_id={run_id!r}, status={status!r}"
+            )
 
     def _require_utc_session(self) -> None:
         """Reject sessions that would interpret Delta timestamps differently."""
