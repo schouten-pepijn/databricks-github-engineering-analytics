@@ -1,8 +1,13 @@
 from datetime import UTC, datetime
+from unittest.mock import Mock
 
 import pytest
 
-from github_engineering_analytics.bronze.issues import BronzeIssueRecord
+from github_engineering_analytics.bronze.issues import (
+    BronzeIssueRecord,
+    DeltaBronzeIssueWriter,
+)
+from github_engineering_analytics.common.config import PipelineConfig
 
 
 def test_bronze_issue_record_preserves_github_payload() -> None:
@@ -129,3 +134,16 @@ def test_bronze_issue_record_rejects_non_json_serializable_payload() -> None:
             request_watermark=None,
             page_or_batch_reference="page-1",
         )
+
+
+def test_delta_bronze_issue_writer_does_not_write_empty_input() -> None:
+    spark = Mock()
+    writer = DeltaBronzeIssueWriter(
+        spark=spark,
+        config=PipelineConfig(catalog="test_catalog"),
+    )
+
+    writer.append([])
+
+    spark.conf.get.assert_not_called()
+    spark.createDataFrame.assert_not_called()

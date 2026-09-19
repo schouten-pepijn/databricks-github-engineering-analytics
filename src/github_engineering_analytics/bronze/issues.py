@@ -3,9 +3,14 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Self
+
+from pyspark.sql import SparkSession
+
+from github_engineering_analytics.common.config import PipelineConfig
 
 
 @dataclass(frozen=True)
@@ -106,3 +111,21 @@ class BronzeIssueRecord:
         """Reject empty identifiers at the Bronze ingestion boundary."""
         if not value.strip():
             raise ValueError(f"{field_name} must not be empty")
+
+
+class DeltaBronzeIssueWriter:
+    """Append source-oriented Bronze issue records to a Delta table."""
+
+    def __init__(
+        self,
+        spark: SparkSession,
+        config: PipelineConfig,
+    ) -> None:
+        self._spark = spark
+        self._schema_name = f"{config.catalog}.{config.bronze_schema}"
+        self._table_name = config.bronze_issues_table
+
+    def append(self, records: Sequence[BronzeIssueRecord]) -> None:
+        """Append records without deduplicating or modifying existing Bronze rows."""
+        if not records:
+            return
