@@ -26,6 +26,8 @@ class DeltaPipelineRunRepository:
 
     _UTC_TIMEZONES: ClassVar[frozenset[str]] = frozenset({"UTC", "Etc/UTC"})
 
+    # Keep this aligned with ensure_table(). An explicit schema prevents Spark
+    # from inferring nullable fields or timestamp types from a single row.
     _ROW_SCHEMA: ClassVar[StructType] = StructType(
         [
             StructField("run_id", StringType(), nullable=False),
@@ -60,7 +62,7 @@ class DeltaPipelineRunRepository:
         self._table_name = config.pipeline_runs_table
 
     def ensure_table(self) -> None:
-        """Create the control schema and pipeline-run Delta table when absent."""
+        """Create the control schema and one-row-per-run Delta table when absent."""
         self._require_utc_session()
 
         self._spark.sql(
@@ -85,7 +87,12 @@ class DeltaPipelineRunRepository:
         )
 
     def record_started(self, run: PipelineRun) -> None:
-        """Persist a running pipeline run without duplicating its run ID."""
+        """Persist a RUNNING run without duplicating its ``run_id``.
+
+        A repeated job-start attempt is an insert-only no-op. It must not
+        overwrite the existing lifecycle row, because the original run may
+        already have progressed to a terminal state.
+        """
         if run.status is not PipelineRunStatus.RUNNING:
             raise ValueError("record_started requires a running pipeline run")
 
@@ -133,6 +140,8 @@ class DeltaPipelineRunRepository:
                 source.alias("source"),
                 "target.run_id = source.run_id",
             )
+            # No matched clause: a retry of the same start does not mutate
+            # the row that was first created for this run ID.
             .whenNotMatchedInsert(
                 values={
                     "run_id": "source.run_id",
@@ -155,6 +164,23 @@ class DeltaPipelineRunRepository:
             .execute()
         )
 
+    def record_finished(self, run: PipelineRun) -> None:
+        """Validate a terminal run before its guarded persistence is implemented.
+
+        This deliberately accepts only SUCCEEDED and FAILED states. The next
+        implementation step will update an existing RUNNING row, rather than
+        inserting a new row or overwriting a terminal state.
+        """
+        if run.status not in {
+            PipelineRunStatus.SUCCEEDED,
+            PipelineRunStatus.FAILED,
+        }:
+            raise ValueError(
+                "record_finished requires a succeeded or failed pipeline run"
+            )
+
+        self._require_utc_session()
+
     def _require_utc_session(self) -> None:
         """Reject sessions that would interpret Delta timestamps differently."""
         session_timezone = self._spark.conf.get("spark.sql.session.timeZone")
@@ -167,6 +193,7 @@ class DeltaPipelineRunRepository:
 
     @staticmethod
     def _quote_identifier(identifier: str) -> str:
+        """Quote each part of a Unity Catalog multipart identifier safely."""
         parts = identifier.split(".")
 
         if not all(parts):

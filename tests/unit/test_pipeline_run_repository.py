@@ -169,3 +169,24 @@ def test_record_started_rejects_terminal_run_before_writing(
 
     spark.createDataFrame.assert_not_called()
     delta_table.forName.assert_not_called()
+
+
+def test_record_finished_rejects_running_run_before_writing() -> None:
+    spark, repository = make_repository()
+
+    running_run = PipelineRun(
+        run_id="run-123",
+        source_name="github",
+        entity_name="issues",
+        started_at=datetime(2026, 9, 19, 12, 0, tzinfo=UTC),
+        watermark_before=None,
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="record_finished requires a succeeded or failed pipeline run",
+    ):
+        repository.record_finished(running_run)
+
+    spark.createDataFrame.assert_not_called()
+    spark.table.assert_not_called()
