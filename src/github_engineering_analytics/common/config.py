@@ -27,3 +27,8 @@ class PipelineConfig:
     def watermark_table(self) -> str:
         """Return the control table holding the latest committed watermark."""
         return f"{self.catalog}.{self.control_schema}.ingestion_watermark"
+
+    @property
+    def pipeline_runs_table(self) -> str:
+        """Return the control table that records pipeline run lifecycle state."""
+        return f"{self.catalog}.{self.control_schema}.pipeline_runs"
