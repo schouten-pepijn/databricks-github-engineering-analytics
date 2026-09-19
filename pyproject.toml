@@ -51,3 +51,6 @@ skip-magic-trailing-comma = false
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+    "integration: requires Databricks Connect and a dedicated DEV catalog",
+]
