@@ -25,7 +25,7 @@ class DeltaWatermarkRepository:
     monotonic: a stale retry cannot move a committed watermark backwards.
     """
 
-    _UTC_TIMEZONES: ClassVar[set[str]] = {"UTC", "Etc/UTC"}
+    _UTC_TIMEZONES: ClassVar[frozenset[str]] = frozenset({"UTC", "Etc/UTC"})
 
     _ROW_SCHEMA: ClassVar[StructType] = StructType(
         [
