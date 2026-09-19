@@ -3,7 +3,6 @@ from datetime import UTC, datetime
 from uuid import uuid4
 
 import pytest
-from databricks.connect import DatabricksSession
 from delta.tables import DeltaTable
 from pyspark.sql import SparkSession
 
@@ -14,33 +13,6 @@ from github_engineering_analytics.control.watermark_repository import (
 )
 
 pytestmark = pytest.mark.integration
-
-
-@pytest.fixture()
-def integration_spark() -> SparkSession:
-    if os.getenv("RUN_DATABRICKS_INTEGRATION_TESTS") != "1":
-        pytest.skip("Set RUN_DATABRICKS_INTEGRATION_TESTS=1 to run integration tests.")
-
-    if not os.getenv("DATABRICKS_TEST_CATALOG"):
-        pytest.skip("Set DATABRICKS_TEST_CATALOG to a dedicated DEV catalog.")
-
-    profile = os.getenv("DATABRICKS_CONFIG_PROFILE", "databricks-dev")
-    cluster_id = os.getenv("DATABRICKS_CLUSTER_ID")
-    builder = DatabricksSession.builder.profile(profile)
-
-    if cluster_id:
-        builder = builder.clusterId(cluster_id)
-    else:
-        builder = builder.serverless()
-
-    spark = builder.getOrCreate()
-    original_timezone = spark.conf.get("spark.sql.session.timeZone")
-    spark.conf.set("spark.sql.session.timeZone", "UTC")
-
-    try:
-        yield spark
-    finally:
-        spark.conf.set("spark.sql.session.timeZone", original_timezone)
 
 
 def test_watermark_repository_preserves_latest_value(
