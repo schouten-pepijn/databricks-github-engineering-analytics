@@ -1,14 +1,14 @@
 from itertools import islice
 
-from github_engineering_analytics.api.client import GitHubApiClient
+from github_engineering_analytics.api.client import GitHubClient
 
 
-def main():
-    client = GitHubApiClient()
+def main() -> None:
+    client = GitHubClient()
 
     issues = client.iter_issues(
         owner="delta-io",
-        repo="delta",
+        repository="delta",
     )
 
     for issue in islice(issues, 5):
