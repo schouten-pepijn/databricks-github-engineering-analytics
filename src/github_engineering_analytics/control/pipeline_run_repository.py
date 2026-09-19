@@ -4,15 +4,51 @@ from __future__ import annotations
 
 from typing import ClassVar
 
+from delta.tables import DeltaTable
 from pyspark.sql import SparkSession
+from pyspark.sql.types import (
+    LongType,
+    StringType,
+    StructField,
+    StructType,
+    TimestampType,
+)
 
 from github_engineering_analytics.common.config import PipelineConfig
+from github_engineering_analytics.control.pipeline_run import (
+    PipelineRun,
+    PipelineRunStatus,
+)
 
 
 class DeltaPipelineRunRepository:
     """Create and later persist one Delta row per pipeline run."""
 
     _UTC_TIMEZONES: ClassVar[frozenset[str]] = frozenset({"UTC", "Etc/UTC"})
+
+    _ROW_SCHEMA: ClassVar[StructType] = StructType(
+        [
+            StructField("run_id", StringType(), nullable=False),
+            StructField("source_name", StringType(), nullable=False),
+            StructField("entity_name", StringType(), nullable=False),
+            StructField("status", StringType(), nullable=False),
+            StructField("started_at", TimestampType(), nullable=False),
+            StructField("finished_at", TimestampType(), nullable=True),
+            StructField("watermark_before_value", TimestampType(), nullable=True),
+            StructField(
+                "watermark_before_overlap_seconds",
+                LongType(),
+                nullable=True,
+            ),
+            StructField("candidate_watermark_value", TimestampType(), nullable=True),
+            StructField(
+                "candidate_watermark_overlap_seconds",
+                LongType(),
+                nullable=True,
+            ),
+            StructField("error_message", StringType(), nullable=True),
+        ]
+    )
 
     def __init__(
         self,
