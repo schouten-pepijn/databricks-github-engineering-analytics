@@ -6,7 +6,7 @@ import json
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Self
+from typing import ClassVar, Self
 
 from pyspark.sql import SparkSession
 
@@ -116,6 +116,8 @@ class BronzeIssueRecord:
 class DeltaBronzeIssueWriter:
     """Append source-oriented Bronze issue records to a Delta table."""
 
+    _UTC_TIMEZONES: ClassVar[frozenset[str]] = frozenset({"UTC", "Etc/UTC"})
+
     def __init__(
         self,
         spark: SparkSession,
@@ -129,3 +131,46 @@ class DeltaBronzeIssueWriter:
         """Append records without deduplicating or modifying existing Bronze rows."""
         if not records:
             return
+
+    def ensure_table(self) -> None:
+        """Create the Bronze schema and append-only issue table when absent."""
+        self._require_utc_session()
+
+        self._spark.sql(
+            f"CREATE SCHEMA IF NOT EXISTS {self._quote_identifier(self._schema_name)}"
+        )
+
+        self._spark.sql(
+            "CREATE TABLE IF NOT EXISTS "
+            f"{self._quote_identifier(self._table_name)} ("
+            "repository_owner STRING NOT NULL, "
+            "repository_name STRING NOT NULL, "
+            "issue_id BIGINT NOT NULL, "
+            "source_updated_at TIMESTAMP NOT NULL, "
+            "raw_json STRING NOT NULL, "
+            "_run_id STRING NOT NULL, "
+            "_ingested_at TIMESTAMP NOT NULL, "
+            "_request_watermark TIMESTAMP, "
+            "_page_or_batch_reference STRING NOT NULL"
+            ") USING DELTA"
+        )
+
+    def _require_utc_session(self) -> None:
+        """Reject sessions that would interpret Delta timestamps differently."""
+        session_timezone = self._spark.conf.get("spark.sql.session.timeZone")
+
+        if session_timezone not in self._UTC_TIMEZONES:
+            raise RuntimeError(
+                "Spark session timezone must be UTC before reading "
+                "or writing Bronze issue records."
+            )
+
+    @staticmethod
+    def _quote_identifier(identifier: str) -> str:
+        """Quote each part of a Unity Catalog multipart identifier safely."""
+        parts = identifier.split(".")
+
+        if not all(parts):
+            raise ValueError(f"Invalid multipart identifier: {identifier!r}")
+
+        return ".".join(f"`{part.replace('`', '``')}`" for part in parts)

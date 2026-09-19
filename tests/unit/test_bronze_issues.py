@@ -147,3 +147,48 @@ def test_delta_bronze_issue_writer_does_not_write_empty_input() -> None:
 
     spark.conf.get.assert_not_called()
     spark.createDataFrame.assert_not_called()
+
+
+def test_delta_bronze_issue_writer_creates_append_only_table() -> None:
+    spark = Mock()
+    spark.conf.get.return_value = "UTC"
+    writer = DeltaBronzeIssueWriter(
+        spark=spark,
+        config=PipelineConfig(catalog="test_catalog"),
+    )
+
+    writer.ensure_table()
+
+    assert spark.sql.call_count == 2
+
+    schema_statement = spark.sql.call_args_list[0].args[0]
+    table_statement = spark.sql.call_args_list[1].args[0]
+
+    assert schema_statement == (
+        "CREATE SCHEMA IF NOT EXISTS `test_catalog`.`github_analytics_bronze`"
+    )
+    assert (
+        "CREATE TABLE IF NOT EXISTS "
+        "`test_catalog`.`github_analytics_bronze`.`github_issues_raw`"
+    ) in table_statement
+    assert "issue_id BIGINT NOT NULL" in table_statement
+    assert "raw_json STRING NOT NULL" in table_statement
+    assert "_run_id STRING NOT NULL" in table_statement
+    assert table_statement.endswith(") USING DELTA")
+
+
+def test_delta_bronze_issue_writer_rejects_non_utc_session() -> None:
+    spark = Mock()
+    spark.conf.get.return_value = "Europe/Amsterdam"
+    writer = DeltaBronzeIssueWriter(
+        spark=spark,
+        config=PipelineConfig(catalog="test_catalog"),
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match="Spark session timezone must be UTC",
+    ):
+        writer.ensure_table()
+
+    spark.sql.assert_not_called()
