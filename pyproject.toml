@@ -23,12 +23,31 @@ dev = [
     "pytest-mock>=3.15.1",
 ]
 
-[project.scripts]
-main = "github_engineering_analytics.main:main"
-
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.ruff]
-line-length = 120
+target-version = "py312"
+line-length = 88
+respect-gitignore = true
+show-fixes = true
+unsafe-fixes = false
+
+[tool.ruff.lint]
+select = [
+    "E", "F", "I", "UP"
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["github_engineering_analytics"]
+combine-as-imports = true
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "auto"
+skip-magic-trailing-comma = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
