@@ -47,6 +47,8 @@ class GitHubIssueBronzeIngestion:
 
         self._writer.ensure_table()
 
+        # A full load deliberately has no source boundary. Incremental loading
+        # will supply the overlap-adjusted watermark through a separate path.
         issues = self._client.iter_issues(
             owner=owner,
             repository=repository,

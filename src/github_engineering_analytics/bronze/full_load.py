@@ -240,6 +240,8 @@ def run_tracked_full_load(
         try:
             pipeline_runs.record_finished(failed_run)
         except Exception:
+            # Lifecycle persistence must not hide the original Bronze failure
+            # that determines the job result and its retry behaviour.
             logger.bind(run_id=started_run.run_id).exception(
                 "Failed to persist pipeline run failure."
             )

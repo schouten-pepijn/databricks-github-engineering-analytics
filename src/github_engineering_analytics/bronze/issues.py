@@ -212,7 +212,7 @@ class DeltaBronzeIssueWriter:
 
     @staticmethod
     def _quote_identifier(identifier: str) -> str:
-        """Quote each part of a Unity Catalog multipart identifier safely."""
+        """Quote every Unity Catalog identifier part and escape embedded backticks."""
         parts = identifier.split(".")
 
         if not all(parts):

@@ -187,10 +187,13 @@ class GitHubClient:
     def _is_rate_limited(
         response: requests.Response,
     ) -> bool:
+        """Recognize GitHub's explicit and implicit rate-limit responses."""
         if response.status_code == 429:
             return True
 
         if response.status_code == 403:
+            # A regular 403 is not retryable. GitHub marks primary-limit 403s
+            # with this header, which makes the distinction actionable.
             remaining = response.headers.get("X-RateLimit-Remaining")
 
             if remaining == "0":
@@ -202,6 +205,7 @@ class GitHubClient:
     def _get_rate_limit_delay(
         response: requests.Response,
     ) -> float | None:
+        """Prefer GitHub's server-provided retry delay over local backoff."""
         retry_after = response.headers.get("Retry-After")
 
         if retry_after is not None:
@@ -277,6 +281,9 @@ class GitHubClient:
 
             yield from records
 
+            # A short final page proves there are no later pages. A full page
+            # needs another request because this endpoint has no parsed Link
+            # header at this boundary.
             if len(records) < per_page:
                 break
 

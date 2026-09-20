@@ -133,6 +133,7 @@ class PipelineRun:
         )
 
     def _require_running(self) -> None:
+        """Ensure lifecycle transitions originate from the sole mutable state."""
         if self.status is not PipelineRunStatus.RUNNING:
             raise ValueError("only running pipeline runs can change lifecycle state")
 
@@ -141,6 +142,7 @@ class PipelineRun:
         value: datetime,
         field_name: str,
     ) -> datetime:
+        """Reject naive timestamps and return an equivalent UTC timestamp."""
         if value.tzinfo is None or value.utcoffset() is None:
             raise ValueError(f"{field_name} must be timezone-aware")
 
@@ -151,5 +153,6 @@ class PipelineRun:
         value: str,
         field_name: str,
     ) -> None:
+        """Reject empty domain identifiers used to locate a pipeline attempt."""
         if not value.strip():
             raise ValueError(f"{field_name} must not be empty")

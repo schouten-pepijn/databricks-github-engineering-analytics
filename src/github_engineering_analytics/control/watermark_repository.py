@@ -219,6 +219,7 @@ class DeltaWatermarkRepository:
         source_name: str,
         entity_name: str,
     ) -> None:
+        """Reject incomplete source/entity keys before querying the control table."""
         if not source_name.strip():
             raise ValueError("source_name must not be empty")
 
@@ -227,6 +228,7 @@ class DeltaWatermarkRepository:
 
     @staticmethod
     def _quote_identifier(identifier: str) -> str:
+        """Quote every Unity Catalog identifier part and escape embedded backticks."""
         parts = identifier.split(".")
 
         if not all(parts):
