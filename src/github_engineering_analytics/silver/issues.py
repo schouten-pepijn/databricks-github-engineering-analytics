@@ -401,6 +401,8 @@ class BronzeIssueToSilverTransformer:
         ]
     )
 
+    _TIMESTAMP_WITH_TIMEZONE_PATTERN: ClassVar[str] = r".*(?:Z|[+-][0-9]{2}:[0-9]{2})$"
+
     def transform(
         self,
         bronze: DataFrame,
@@ -429,9 +431,11 @@ class BronzeIssueToSilverTransformer:
             )
             .isNotNull()
             .alias("is_pull_request"),
-            F.to_timestamp(F.col("_payload.created_at")).alias("created_at"),
-            F.to_timestamp(F.col("_payload.updated_at")).alias("updated_at"),
-            F.to_timestamp(F.col("_payload.closed_at")).alias("closed_at"),
+            # Tolerant parsing lets the validation below raise one domain error
+            # for malformed source timestamps, even when Spark ANSI mode is on.
+            F.try_to_timestamp(F.col("_payload.created_at")).alias("created_at"),
+            F.try_to_timestamp(F.col("_payload.updated_at")).alias("updated_at"),
+            F.try_to_timestamp(F.col("_payload.closed_at")).alias("closed_at"),
             F.col("_run_id").alias("source_run_id"),
             # These remain temporarily to make latest-record selection explicit.
             F.col("source_updated_at").alias("_source_updated_at"),
@@ -439,6 +443,9 @@ class BronzeIssueToSilverTransformer:
             F.col("_page_or_batch_reference"),
             F.col("raw_json"),
             F.col("_payload.id").alias("_payload_issue_id"),
+            F.col("_payload.created_at").alias("_created_at_raw"),
+            F.col("_payload.updated_at").alias("_updated_at_raw"),
+            F.col("_payload.closed_at").alias("_closed_at_raw"),
         )
 
         self._require_valid_normalized_rows(normalized_rows)
@@ -487,19 +494,44 @@ class BronzeIssueToSilverTransformer:
                 f"Bronze source is missing required columns: {sorted(missing_columns)}"
             )
 
-    @staticmethod
-    def _require_valid_normalized_rows(rows: DataFrame) -> None:
+    @classmethod
+    def _require_valid_normalized_rows(cls, rows: DataFrame) -> None:
         """Fail before MERGE when Bronze JSON cannot form valid Silver records."""
         invalid_rows = rows.where(
             F.col("_payload_issue_id").isNull()
             | (F.col("_payload_issue_id") != F.col("issue_id"))
+            | (F.col("issue_id") <= 0)
+            | (F.col("_payload_issue_id") <= 0)
             | F.col("issue_number").isNull()
+            | (F.col("issue_number") <= 0)
             | F.col("title").isNull()
             | (F.length(F.trim(F.col("title"))) == 0)
             | F.col("state").isNull()
             | (F.length(F.trim(F.col("state"))) == 0)
+            | F.col("repository_owner").isNull()
+            | (F.length(F.trim(F.col("repository_owner"))) == 0)
+            | F.col("repository_name").isNull()
+            | (F.length(F.trim(F.col("repository_name"))) == 0)
+            | F.col("source_run_id").isNull()
+            | (F.length(F.trim(F.col("source_run_id"))) == 0)
+            | F.col("_source_updated_at").isNull()
+            | F.col("_ingested_at").isNull()
+            | F.col("_created_at_raw").isNull()
+            | ~F.col("_created_at_raw").rlike(cls._TIMESTAMP_WITH_TIMEZONE_PATTERN)
+            | F.col("_updated_at_raw").isNull()
+            | ~F.col("_updated_at_raw").rlike(cls._TIMESTAMP_WITH_TIMEZONE_PATTERN)
             | F.col("created_at").isNull()
             | F.col("updated_at").isNull()
+            | (F.col("updated_at") != F.col("_source_updated_at"))
+            | (
+                F.col("_closed_at_raw").isNotNull()
+                & (
+                    F.col("closed_at").isNull()
+                    | ~F.col("_closed_at_raw").rlike(
+                        cls._TIMESTAMP_WITH_TIMEZONE_PATTERN
+                    )
+                )
+            )
         )
 
         if invalid_rows.limit(1).count():
