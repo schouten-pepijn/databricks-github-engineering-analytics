@@ -20,8 +20,8 @@ resources:
               catalog: ${var.catalog}
               owner: ${var.github_owner}
               repository: ${var.github_repository}
-              token_secret_scope: ${var.github_token_secret_scope}
-              token_secret_key: ${var.github_token_secret_key}
+              token-secret-scope: ${var.github_token_secret_scope}
+              token-secret-key: ${var.github_token_secret_key}
 
       environments:
         - environment_key: default
