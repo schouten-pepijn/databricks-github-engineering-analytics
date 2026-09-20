@@ -27,6 +27,29 @@ If you're developing with an IDE, dependencies for this project should be instal
    It's an alternative to tools like pip: https://docs.astral.sh/uv/getting-started/installation/.
 *  Run `uv sync --dev` to install the project's dependencies.
 
+## Development tasks
+
+Install the Go Task runner, then use the checked-in tasks for the normal local
+workflow:
+
+```
+task setup
+task check
+```
+
+Create a local semantic-version release after `task check` succeeds:
+
+```
+task version:patch
+task version:minor
+task version:major
+```
+
+Each version task refuses a dirty working tree, updates `pyproject.toml` and
+`uv.lock`, creates a local commit, and creates an annotated `v<version>` tag.
+It never pushes the commit or tag. Use `task version:show-bump` to preview the
+next versions without changing files.
+
 
 # Using this project using the CLI
 

@@ -3,6 +3,8 @@ version: "3"
 tasks:
   setup:
     desc: Install development dependencies
+    env:
+      UV_LINK_MODE: copy
     cmds:
       - uv sync --dev
 
@@ -54,21 +56,36 @@ tasks:
       - databricks bundle deploy --target dev
 
   version:patch:
-    desc: Bump the patch version, for example 0.0.1 to 0.0.2
+    desc: Create a local patch release commit and annotated tag
+    env:
+      PYTHONUTF8: "1"
     cmds:
-      - uv version --bump patch
+      - uv run python -m bumpversion bump patch
 
   version:minor:
-    desc: Bump the minor version, for example 0.0.1 to 0.1.0
+    desc: Create a local minor release commit and annotated tag
+    env:
+      PYTHONUTF8: "1"
     cmds:
-      - uv version --bump minor
+      - uv run python -m bumpversion bump minor
 
   version:major:
-    desc: Bump the major version, for example 0.0.1 to 1.0.0
+    desc: Create a local major release commit and annotated tag
+    env:
+      PYTHONUTF8: "1"
     cmds:
-      - uv version --bump major
+      - uv run python -m bumpversion bump major
 
   version:show:
     desc: Show the current project version
+    env:
+      PYTHONUTF8: "1"
     cmds:
-      - uv version --short
+      - uv run python -m bumpversion show current_version
+
+  version:show-bump:
+    desc: Show the next major, minor, and patch versions without changing files
+    env:
+      PYTHONUTF8: "1"
+    cmds:
+      - uv run python -m bumpversion show-bump
