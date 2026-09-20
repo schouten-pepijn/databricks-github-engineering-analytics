@@ -15,7 +15,7 @@ resources:
 
           python_wheel_task:
             package_name: github_engineering_analytics
-            entry_point: github_engineering_analytics.full_load
+            entry_point: github-engineering-analytics-full-load
             named_parameters:
               catalog: ${var.catalog}
               owner: ${var.github_owner}
@@ -26,6 +26,6 @@ resources:
       environments:
         - environment_key: default
           spec:
-            environment_version: "2"
+            environment_version: "3"
             dependencies:
               - ../dist/*.whl

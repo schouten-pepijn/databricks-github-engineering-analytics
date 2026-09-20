@@ -15,7 +15,7 @@ dependencies = [
 ]
 
 [project.scripts]
-github-engineering-analytics-full-load = "github_engineering_analytics.bronze.full_load:main"
+github-engineering-analytics-full-load = "github_engineering_analytics.bronze.full_load:cli"
 
 
 [dependency-groups]
