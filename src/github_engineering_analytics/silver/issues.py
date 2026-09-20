@@ -8,8 +8,9 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import ClassVar, Self
 
+import pyspark.sql.functions as F
 from delta.tables import DeltaTable
-from pyspark.sql import SparkSession
+from pyspark.sql import DataFrame, SparkSession
 from pyspark.sql.types import (
     BooleanType,
     LongType,
@@ -252,6 +253,23 @@ class DeltaSilverIssueWriter:
             schema=self._ROW_SCHEMA,
         )
 
+        self._merge_source(source)
+
+    def upsert_dataframe(
+        self,
+        source: DataFrame,
+    ) -> None:
+        """Merge one already-normalized, unique Silver source DataFrame."""
+        self._require_utc_session()
+        self._require_required_columns(source)
+        self._require_unique_dataframe_business_keys(source)
+        self._merge_source(source)
+
+    def _merge_source(
+        self,
+        source: DataFrame,
+    ) -> None:
+        """Merge a validated source DataFrame into the current-state Silver table."""
         target = DeltaTable.forName(self._spark, self._table_name)
 
         (
@@ -294,6 +312,35 @@ class DeltaSilverIssueWriter:
             )
             .execute()
         )
+
+    def _require_required_columns(self, source: DataFrame) -> None:
+        """Reject DataFrames that cannot satisfy the Silver table contract."""
+        required_columns = {field.name for field in self._ROW_SCHEMA}
+        missing_columns = required_columns - set(source.columns)
+
+        if missing_columns:
+            raise ValueError(
+                f"Silver source is missing required columns: {sorted(missing_columns)}"
+            )
+
+    def _require_unique_dataframe_business_keys(self, source: DataFrame) -> None:
+        """Reject source DataFrames with more than one row per merge key."""
+        duplicate_keys = (
+            source.groupBy(
+                "repository_owner",
+                "repository_name",
+                "issue_id",
+            )
+            .count()
+            .where(F.col("count") > 1)
+            .limit(1)
+            .collect()
+        )
+
+        if duplicate_keys:
+            raise ValueError(
+                "Silver source contains duplicate business keys before MERGE"
+            )
 
     @staticmethod
     def _require_unique_business_keys(records: Sequence[SilverIssue]) -> None:
