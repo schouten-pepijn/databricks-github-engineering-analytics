@@ -90,3 +90,29 @@ def run_full_load(
         run_id=run_id_factory().hex,
         ingested_at=clock(),
     )
+
+
+def main() -> None:
+    """Run a full load of GitHub Issues into the Bronze table."""
+    settings = FullLoadSettings.from_environment(os.environ)
+    spark = _get_or_create_spark()
+
+    result = run_full_load(
+        spark=spark,
+        catalog=settings.catalog,
+        owner=settings.owner,
+        repository=settings.repository,
+        github_token=settings.github_token,
+    )
+
+    logger.bind(
+        catalog=settings.catalog,
+        repository_owner=settings.owner,
+        repository_name=settings.repository,
+        records_extracted=result.records_extracted,
+        batches_written=result.batches_written,
+    ).info("Completed full Bronze load.")
+
+
+if __name__ == "__main__":
+    main()
