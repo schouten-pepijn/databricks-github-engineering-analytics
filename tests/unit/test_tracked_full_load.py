@@ -2,6 +2,8 @@ from datetime import UTC, datetime
 from unittest.mock import Mock
 from uuid import UUID
 
+import pytest
+
 from github_engineering_analytics.bronze.full_load import run_tracked_full_load
 from github_engineering_analytics.bronze.ingestion import BronzeIngestionResult
 from github_engineering_analytics.common.config import PipelineConfig
@@ -68,3 +70,35 @@ def test_run_tracked_full_load_records_a_successful_lifecycle(mocker) -> None:
         run_id="12345678123456781234567812345678",
         ingested_at=started_at,
     )
+
+
+def test_run_tracked_full_load_records_failure_and_reraises(mocker) -> None:
+    spark = Mock()
+    repository = Mock()
+    started_at = datetime(2026, 9, 20, 12, 0, tzinfo=UTC)
+    finished_at = datetime(2026, 9, 20, 12, 5, tzinfo=UTC)
+    failure = RuntimeError("GitHub request timed out")
+
+    mocker.patch(
+        "github_engineering_analytics.bronze.full_load.DeltaPipelineRunRepository",
+        return_value=repository,
+    )
+    mocker.patch(
+        "github_engineering_analytics.bronze.full_load.run_full_load",
+        side_effect=failure,
+    )
+
+    with pytest.raises(RuntimeError, match="GitHub request timed out"):
+        run_tracked_full_load(
+            spark=spark,
+            catalog="test_catalog",
+            owner="psf",
+            repository="requests",
+            run_id_factory=lambda: UUID("12345678-1234-5678-1234-567812345678"),
+            clock=Mock(side_effect=[started_at, finished_at]),
+        )
+
+    failed_run = repository.record_finished.call_args.args[0]
+    assert failed_run.status is PipelineRunStatus.FAILED
+    assert failed_run.finished_at == finished_at
+    assert failed_run.error_message == "GitHub request timed out"

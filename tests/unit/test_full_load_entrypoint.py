@@ -1,7 +1,6 @@
 import os
 from datetime import UTC, datetime
 from unittest.mock import Mock
-from uuid import UUID
 
 import pytest
 
@@ -48,8 +47,8 @@ def test_run_full_load_builds_and_invokes_the_ingestion_service(
         owner="octo-org",
         repository="engineering-analytics",
         github_token=github_token,
-        run_id_factory=lambda: UUID("12345678-1234-5678-1234-567812345678"),
-        clock=lambda: datetime(2026, 9, 20, 12, 0, tzinfo=UTC),
+        run_id="12345678123456781234567812345678",
+        ingested_at=datetime(2026, 9, 20, 12, 0, tzinfo=UTC),
     )
 
     assert result is expected_result
@@ -186,7 +185,7 @@ def test_main_builds_spark_and_runs_full_load_from_environment(
         return_value=settings,
     )
     full_load = mocker.patch(
-        "github_engineering_analytics.bronze.full_load.run_full_load",
+        "github_engineering_analytics.bronze.full_load.run_tracked_full_load",
         return_value=expected_result,
     )
 
@@ -232,7 +231,7 @@ def test_main_accepts_named_job_parameters(
         return_value="resolved-token",
     )
     full_load = mocker.patch(
-        "github_engineering_analytics.bronze.full_load.run_full_load",
+        "github_engineering_analytics.bronze.full_load.run_tracked_full_load",
         return_value=expected_result,
     )
 
@@ -399,7 +398,7 @@ def test_main_resolves_secret_reference_before_running_full_load(
         return_value="resolved-token",
     )
     full_load = mocker.patch(
-        "github_engineering_analytics.bronze.full_load.run_full_load",
+        "github_engineering_analytics.bronze.full_load.run_tracked_full_load",
         return_value=expected_result,
     )
 
