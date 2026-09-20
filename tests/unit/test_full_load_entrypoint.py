@@ -1,3 +1,4 @@
+import os
 from datetime import UTC, datetime
 from unittest.mock import Mock
 from uuid import UUID
@@ -6,8 +7,10 @@ import pytest
 
 from github_engineering_analytics.bronze.full_load import (
     FullLoadSettings,
+    main,
     run_full_load,
 )
+from github_engineering_analytics.bronze.ingestion import BronzeIngestionResult
 from github_engineering_analytics.common.config import PipelineConfig
 
 
@@ -101,3 +104,44 @@ def test_full_load_settings_rejects_missing_required_values(
 
     with pytest.raises(ValueError, match=missing_variable):
         FullLoadSettings.from_environment(environment)
+
+
+def test_main_builds_spark_and_runs_full_load_from_environment(
+    mocker,
+) -> None:
+    spark = Mock()
+    settings = FullLoadSettings(
+        catalog="test_catalog",
+        owner="octo-org",
+        repository="engineering-analytics",
+        github_token=None,
+    )
+    expected_result = BronzeIngestionResult(
+        records_extracted=3,
+        batches_written=1,
+    )
+
+    get_or_create = mocker.patch(
+        "github_engineering_analytics.bronze.full_load._get_or_create_spark",
+        return_value=spark,
+    )
+    settings_from_environment = mocker.patch(
+        "github_engineering_analytics.bronze.full_load.FullLoadSettings.from_environment",
+        return_value=settings,
+    )
+    full_load = mocker.patch(
+        "github_engineering_analytics.bronze.full_load.run_full_load",
+        return_value=expected_result,
+    )
+
+    main()
+
+    get_or_create.assert_called_once_with()
+    settings_from_environment.assert_called_once_with(os.environ)
+    full_load.assert_called_once_with(
+        spark=spark,
+        catalog="test_catalog",
+        owner="octo-org",
+        repository="engineering-analytics",
+        github_token=None,
+    )
