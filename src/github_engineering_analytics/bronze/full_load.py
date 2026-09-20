@@ -221,7 +221,7 @@ def main(
         )
     spark = _get_or_create_spark()
 
-    result = run_full_load(
+    result = run_tracked_full_load(
         spark=spark,
         catalog=settings.catalog,
         owner=settings.owner,
