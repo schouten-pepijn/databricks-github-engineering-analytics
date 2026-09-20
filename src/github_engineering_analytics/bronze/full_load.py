@@ -140,11 +140,14 @@ def resolve_github_token(
             "GITHUB_ANALYTICS_TOKEN_SECRET_KEY must be provided together"
         )
 
-    token = secret_getter(
-        spark=spark,
-        scope=scope,
-        key=key,
-    )
+    try:
+        token = secret_getter(
+            spark=spark,
+            scope=scope,
+            key=key,
+        )
+    except Exception as e:
+        raise RuntimeError(f"Unable to read Github token secret {scope}/{key}") from e
 
     if not token.strip():
         raise ValueError(f"Databricks secret {scope}/{key} must not be empty")
