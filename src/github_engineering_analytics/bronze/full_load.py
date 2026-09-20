@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 import os
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
@@ -191,11 +192,11 @@ def main(
     token_secret_scope: str | None = None,
     token_secret_key: str | None = None,
 ) -> None:
-    """Run a GitHub Issues full load from local or Databricks job configuration.
+    """Run a GitHub Issues full load from local or supplied configuration.
 
     When called without arguments, configuration comes from local environment
-    variables. A Databricks Python wheel task supplies all five named
-    parameters instead. The token itself is deliberately never a task
+    variables. The ``cli`` adapter supplies the five task arguments for a
+    Databricks Python wheel run. The token itself is deliberately never a task
     parameter; Databricks resolves it from the supplied secret reference.
     """
     job_parameters = (
@@ -240,5 +241,26 @@ def main(
     ).info("Completed full Bronze load.")
 
 
+def cli() -> None:
+    """Parse Python-wheel task arguments and delegate to the full-load entry point."""
+    parser = argparse.ArgumentParser(
+        description="Run a GitHub Issues full load into Bronze storage."
+    )
+    parser.add_argument("--catalog")
+    parser.add_argument("--owner")
+    parser.add_argument("--repository")
+    parser.add_argument("--token-secret-scope")
+    parser.add_argument("--token-secret-key")
+    arguments = parser.parse_args()
+
+    main(
+        catalog=arguments.catalog,
+        owner=arguments.owner,
+        repository=arguments.repository,
+        token_secret_scope=arguments.token_secret_scope,
+        token_secret_key=arguments.token_secret_key,
+    )
+
+
 if __name__ == "__main__":
-    main()
+    cli()
