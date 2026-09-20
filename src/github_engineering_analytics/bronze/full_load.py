@@ -29,6 +29,8 @@ class FullLoadSettings:
     owner: str
     repository: str
     github_token: str | None = None
+    github_token_secret_scope: str | None = None
+    github_token_secret_key: str | None = None
 
     @classmethod
     def from_environment(
@@ -51,13 +53,46 @@ class FullLoadSettings:
             raise ValueError(f"Missing required environment variables: {missing}")
 
         token = environment.get("GITHUB_TOKEN")
+        secret_scope = environment.get("GITHUB_ANALYTICS_TOKEN_SECRET_SCOPE")
+        secret_key = environment.get("GITHUB_ANALYTICS_TOKEN_SECRET_KEY")
+
+        token = token.strip() if token and token.strip() else None
+        secret_scope = (
+            secret_scope.strip() if secret_scope and secret_scope.strip() else None
+        )
+        secret_key = secret_key.strip() if secret_key and secret_key.strip() else None
+
+        if bool(secret_scope) != bool(secret_key):
+            raise ValueError(
+                "GITHUB_ANALYTICS_TOKEN_SECRET_SCOPE and "
+                "GITHUB_ANALYTICS_TOKEN_SECRET_KEY must be provided together"
+            )
+
+        if token is not None and secret_scope is not None:
+            raise ValueError(
+                "GITHUB_TOKEN cannot be used with a Databricks secret reference"
+            )
 
         return cls(
             catalog=environment["GITHUB_ANALYTICS_CATALOG"].strip(),
             owner=environment["GITHUB_ANALYTICS_OWNER"].strip(),
             repository=environment["GITHUB_ANALYTICS_REPOSITORY"].strip(),
-            github_token=token.strip() if token and token.strip() else None,
+            github_token=token,
+            github_token_secret_scope=secret_scope,
+            github_token_secret_key=secret_key,
         )
+
+
+class DatabricksSecretGetter(Protocol):
+    """Read one value from a classic Databricks secret scope/key pair."""
+
+    def __call__(
+        self,
+        *,
+        spark: SparkSession,
+        scope: str,
+        key: str,
+    ) -> str: ...
 
 
 def _current_utc_time() -> datetime:
