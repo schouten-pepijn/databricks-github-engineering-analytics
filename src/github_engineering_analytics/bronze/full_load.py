@@ -167,14 +167,15 @@ def run_full_load(
     owner: str,
     repository: str,
     github_token: str | None = None,
-    run_id_factory: Callable[[], UUID] = uuid4,
-    clock: Callable[[], datetime] = _current_utc_time,
+    run_id: str,
+    ingested_at: datetime,
 ) -> BronzeIngestionResult:
     """Run one complete GitHub Issues extraction into the Bronze table.
 
-    The orchestration boundary creates the run ID and ingestion timestamp.
-    It does not manage watermarks, pipeline-run state, Silver processing,
-    Databricks secrets, or job configuration.
+    The caller supplies the run ID and ingestion timestamp so a higher-level
+    orchestrator can use the same metadata for the durable pipeline lifecycle.
+    This function does not manage watermarks, pipeline-run state, Silver
+    processing, Databricks secrets, or job configuration.
     """
     config = PipelineConfig(catalog=catalog)
     client = GitHubClient(token=github_token)
