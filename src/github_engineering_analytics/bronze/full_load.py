@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import os
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Self
 from uuid import UUID, uuid4
 
+from loguru import logger
 from pyspark.sql import SparkSession
 
 from github_engineering_analytics.api.client import GitHubClient
@@ -61,6 +63,11 @@ class FullLoadSettings:
 def _current_utc_time() -> datetime:
     """Return the current timezone-aware UTC timestamp for a pipeline run."""
     return datetime.now(UTC)
+
+
+def _get_or_create_spark() -> SparkSession:
+    """Return the active Spark session or create one in the runtime."""
+    return SparkSession.builder.getOrCreate()
 
 
 def run_full_load(
