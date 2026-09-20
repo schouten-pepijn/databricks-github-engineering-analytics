@@ -14,6 +14,10 @@ dependencies = [
     "tenacity>=9.1.4",
 ]
 
+[project.scripts]
+github-engineering-analytics-full-load = "github_engineering_analytics.bronze.full_load:main"
+
+
 [dependency-groups]
 dev = [
     "bump-my-version>=1.5.1",
@@ -23,7 +27,6 @@ dev = [
     "databricks-connect>=16.4,<16.5",
     "ipykernel",
     "pytest-mock>=3.15.1",
-    "bump-my-version>=1.5.1",
 ]
 
 [tool.bumpversion]
