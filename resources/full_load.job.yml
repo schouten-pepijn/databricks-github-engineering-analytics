@@ -1,0 +1,31 @@
+resources:
+  jobs:
+    github_issues_full_load:
+      name: GitHub Issues full Bronze load
+      description: Extract gitHub Issues and append their raw payloads
+
+      tasks:
+        - task_key: full_load
+          environment_key: default
+
+          # Bronze writes are currently append-only. Do not let serverless
+          # automatically replay a partially completed task.
+          max_retries: 0
+          disable_auto_optimization: true
+
+          python_wheel_task:
+            package_name: github_engineering_analytics
+            entry_point: github_engineering_analytics.full_load
+            named_parameters:
+              catalog: ${var.catalog}
+              owner: ${var.github_owner}
+              repository: ${var.github_repository}
+              token_secret_scope: ${var.github_token_secret_scope}
+              token_secret_key: ${var.github_token_secret_key}
+
+      environments:
+        - environment_key: default
+          spec:
+            environment_version: "2"
+            dependencies:
+              - ../dist/*.whl
