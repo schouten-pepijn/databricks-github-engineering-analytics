@@ -89,3 +89,8 @@ tasks:
       PYTHONUTF8: "1"
     cmds:
       - uv run python -m bumpversion show-bump
+
+  package:build:
+    desc: Build the deployable Python wheel
+    cmds:
+      - uv build --wheel
