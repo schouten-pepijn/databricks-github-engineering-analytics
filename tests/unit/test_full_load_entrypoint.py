@@ -8,6 +8,7 @@ import pytest
 from github_engineering_analytics.bronze.full_load import (
     FullLoadSettings,
     main,
+    resolve_github_token,
     run_full_load,
 )
 from github_engineering_analytics.bronze.ingestion import BronzeIngestionResult
@@ -84,6 +85,60 @@ def test_full_load_settings_reads_required_values_and_optional_token() -> None:
     assert settings.github_token == "test-token"
 
 
+def test_full_load_settings_reads_github_token_secret_reference() -> None:
+    settings = FullLoadSettings.from_environment(
+        {
+            "GITHUB_ANALYTICS_CATALOG": "test_catalog",
+            "GITHUB_ANALYTICS_OWNER": "octo-org",
+            "GITHUB_ANALYTICS_REPOSITORY": "engineering-analytics",
+            "GITHUB_ANALYTICS_TOKEN_SECRET_SCOPE": "github-secrets",
+            "GITHUB_ANALYTICS_TOKEN_SECRET_KEY": "api-token",
+        }
+    )
+
+    assert settings.github_token is None
+    assert settings.github_token_secret_scope == "github-secrets"
+    assert settings.github_token_secret_key == "api-token"
+
+
+@pytest.mark.parametrize(
+    "environment",
+    [
+        {
+            "GITHUB_ANALYTICS_CATALOG": "test_catalog",
+            "GITHUB_ANALYTICS_OWNER": "octo-org",
+            "GITHUB_ANALYTICS_REPOSITORY": "engineering-analytics",
+            "GITHUB_ANALYTICS_TOKEN_SECRET_SCOPE": "github-secrets",
+        },
+        {
+            "GITHUB_ANALYTICS_CATALOG": "test_catalog",
+            "GITHUB_ANALYTICS_OWNER": "octo-org",
+            "GITHUB_ANALYTICS_REPOSITORY": "engineering-analytics",
+            "GITHUB_ANALYTICS_TOKEN_SECRET_KEY": "api-token",
+        },
+    ],
+)
+def test_full_load_settings_rejects_incomplete_secret_reference(
+    environment: dict[str, str],
+) -> None:
+    with pytest.raises(ValueError, match="TOKEN_SECRET"):
+        FullLoadSettings.from_environment(environment)
+
+
+def test_full_load_settings_rejects_direct_token_and_secret_reference() -> None:
+    environment = {
+        "GITHUB_ANALYTICS_CATALOG": "test_catalog",
+        "GITHUB_ANALYTICS_OWNER": "octo-org",
+        "GITHUB_ANALYTICS_REPOSITORY": "engineering-analytics",
+        "GITHUB_TOKEN": "direct-token",
+        "GITHUB_ANALYTICS_TOKEN_SECRET_SCOPE": "github-secrets",
+        "GITHUB_ANALYTICS_TOKEN_SECRET_KEY": "api-token",
+    }
+
+    with pytest.raises(ValueError, match="GITHUB_TOKEN"):
+        FullLoadSettings.from_environment(environment)
+
+
 @pytest.mark.parametrize(
     "missing_variable",
     [
@@ -145,3 +200,82 @@ def test_main_builds_spark_and_runs_full_load_from_environment(
         repository="engineering-analytics",
         github_token=None,
     )
+
+
+def test_resolve_github_token_returns_direct_token_without_reading_secret() -> None:
+    settings = FullLoadSettings(
+        catalog="test_catalog",
+        owner="octo-org",
+        repository="engineering-analytics",
+        github_token="direct-token",
+    )
+    spark = Mock()
+    secret_getter = Mock()
+
+    token = resolve_github_token(
+        settings=settings,
+        spark=spark,
+        secret_getter=secret_getter,
+    )
+
+    assert token == "direct-token"
+    secret_getter.assert_not_called()
+
+
+def test_resolve_github_token_reads_configured_databricks_secret() -> None:
+    settings = FullLoadSettings(
+        catalog="test_catalog",
+        owner="octo-org",
+        repository="engineering-analytics",
+        github_token_secret_scope="github-secrets",
+        github_token_secret_key="api-token",
+    )
+    spark = Mock()
+    secret_getter = Mock(return_value="resolved-token")
+
+    token = resolve_github_token(
+        settings=settings,
+        spark=spark,
+        secret_getter=secret_getter,
+    )
+
+    assert token == "resolved-token"
+    secret_getter.assert_called_once_with(
+        spark=spark,
+        scope="github-secrets",
+        key="api-token",
+    )
+
+
+def test_resolve_github_token_returns_none_without_token_configuration() -> None:
+    settings = FullLoadSettings(
+        catalog="test_catalog",
+        owner="octo-org",
+        repository="engineering-analytics",
+    )
+
+    assert (
+        resolve_github_token(
+            settings=settings,
+            spark=Mock(),
+            secret_getter=Mock(),
+        )
+        is None
+    )
+
+
+def test_resolve_github_token_rejects_blank_databricks_secret() -> None:
+    settings = FullLoadSettings(
+        catalog="test_catalog",
+        owner="octo-org",
+        repository="engineering-analytics",
+        github_token_secret_scope="github-secrets",
+        github_token_secret_key="api-token",
+    )
+
+    with pytest.raises(ValueError, match="github-secrets/api-token"):
+        resolve_github_token(
+            settings=settings,
+            spark=Mock(),
+            secret_getter=Mock(return_value="   "),
+        )
