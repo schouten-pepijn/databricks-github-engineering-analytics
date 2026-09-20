@@ -202,6 +202,69 @@ def test_main_builds_spark_and_runs_full_load_from_environment(
     )
 
 
+def test_main_accepts_named_job_parameters(
+    mocker,
+) -> None:
+    spark = Mock()
+    settings = FullLoadSettings(
+        catalog="test_catalog",
+        owner="octo-org",
+        repository="engineering-analytics",
+        github_token_secret_scope="github-secrets",
+        github_token_secret_key="api-token",
+    )
+    expected_result = BronzeIngestionResult(
+        records_extracted=3,
+        batches_written=1,
+    )
+
+    mocker.patch(
+        "github_engineering_analytics.bronze.full_load._get_or_create_spark",
+        return_value=spark,
+    )
+    settings_from_environment = mocker.patch(
+        "github_engineering_analytics.bronze.full_load.FullLoadSettings.from_environment",
+        return_value=settings,
+    )
+    resolve_token = mocker.patch(
+        "github_engineering_analytics.bronze.full_load.resolve_github_token",
+        return_value="resolved-token",
+    )
+    full_load = mocker.patch(
+        "github_engineering_analytics.bronze.full_load.run_full_load",
+        return_value=expected_result,
+    )
+
+    main(
+        catalog="test_catalog",
+        owner="octo-org",
+        repository="engineering-analytics",
+        token_secret_scope="github-secrets",
+        token_secret_key="api-token",
+    )
+
+    settings_from_environment.assert_called_once_with(
+        {
+            "GITHUB_ANALYTICS_CATALOG": "test_catalog",
+            "GITHUB_ANALYTICS_OWNER": "octo-org",
+            "GITHUB_ANALYTICS_REPOSITORY": "engineering-analytics",
+            "GITHUB_ANALYTICS_TOKEN_SECRET_SCOPE": "github-secrets",
+            "GITHUB_ANALYTICS_TOKEN_SECRET_KEY": "api-token",
+        }
+    )
+    resolve_token.assert_called_once_with(
+        settings=settings,
+        spark=spark,
+    )
+    full_load.assert_called_once_with(
+        spark=spark,
+        catalog="test_catalog",
+        owner="octo-org",
+        repository="engineering-analytics",
+        github_token="resolved-token",
+    )
+
+
 def test_resolve_github_token_returns_direct_token_without_reading_secret() -> None:
     settings = FullLoadSettings(
         catalog="test_catalog",

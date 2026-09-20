@@ -184,9 +184,40 @@ def run_full_load(
     )
 
 
-def main() -> None:
-    """Run a full load of GitHub Issues into the Bronze table."""
-    settings = FullLoadSettings.from_environment(os.environ)
+def main(
+    catalog: str | None = None,
+    owner: str | None = None,
+    repository: str | None = None,
+    token_secret_scope: str | None = None,
+    token_secret_key: str | None = None,
+) -> None:
+    """Run a GitHub Issues full load from local or Databricks job configuration.
+
+    When called without arguments, configuration comes from local environment
+    variables. A Databricks Python wheel task supplies all five named
+    parameters instead. The token itself is deliberately never a task
+    parameter; Databricks resolves it from the supplied secret reference.
+    """
+    job_parameters = (
+        catalog,
+        owner,
+        repository,
+        token_secret_scope,
+        token_secret_key,
+    )
+
+    if all(parameter is None for parameter in job_parameters):
+        settings = FullLoadSettings.from_environment(os.environ)
+    else:
+        settings = FullLoadSettings.from_environment(
+            {
+                "GITHUB_ANALYTICS_CATALOG": catalog or "",
+                "GITHUB_ANALYTICS_OWNER": owner or "",
+                "GITHUB_ANALYTICS_REPOSITORY": repository or "",
+                "GITHUB_ANALYTICS_TOKEN_SECRET_SCOPE": token_secret_scope or "",
+                "GITHUB_ANALYTICS_TOKEN_SECRET_KEY": token_secret_key or "",
+            }
+        )
     spark = _get_or_create_spark()
 
     result = run_full_load(
