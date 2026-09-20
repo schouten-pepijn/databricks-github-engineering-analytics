@@ -70,6 +70,53 @@ def _get_or_create_spark() -> SparkSession:
     return SparkSession.builder.getOrCreate()
 
 
+def _get_databricks_secret(
+    *,
+    spark: SparkSession,
+    scope: str,
+    key: str,
+) -> str:
+    """Read one secret through Databricks Utilities at runtime."""
+    from pyspark.dbutils import DBUtils
+
+    return DBUtils(spark).secrets.get(scope=scope, key=key)
+
+
+def resolve_github_token(
+    *,
+    settings: FullLoadSettings,
+    spark: SparkSession,
+    secret_getter: DatabricksSecretGetter = _get_databricks_secret,
+) -> str | None:
+    """Resolve a direct GitHub token or a configured Databricks secret."""
+
+    if settings.github_token is not None:
+        return settings.github_token
+
+    scope = settings.github_token_secret_scope
+    key = settings.github_token_secret_key
+
+    if scope is None and key is None:
+        return None
+
+    if scope is None or key is None:
+        raise ValueError(
+            "GITHUB_ANALYTICS_TOKEN_SECRET_SCOPE and "
+            "GITHUB_ANALYTICS_TOKEN_SECRET_KEY must be provided together"
+        )
+
+    token = secret_getter(
+        spark=spark,
+        scope=scope,
+        key=key,
+    )
+
+    if not token.strip():
+        raise ValueError(f"Databricks secret {scope}/{key} must not be empty")
+
+    return token
+
+
 def run_full_load(
     *,
     spark: SparkSession,
@@ -109,7 +156,10 @@ def main() -> None:
         catalog=settings.catalog,
         owner=settings.owner,
         repository=settings.repository,
-        github_token=settings.github_token,
+        github_token=resolve_github_token(
+            settings=settings,
+            spark=spark,
+        ),
     )
 
     logger.bind(
