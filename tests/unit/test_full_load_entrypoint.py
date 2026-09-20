@@ -4,7 +4,10 @@ from uuid import UUID
 
 import pytest
 
-from github_engineering_analytics.bronze.full_load import run_full_load
+from github_engineering_analytics.bronze.full_load import (
+    FullLoadSettings,
+    run_full_load,
+)
 from github_engineering_analytics.common.config import PipelineConfig
 
 
@@ -60,3 +63,41 @@ def test_run_full_load_builds_and_invokes_the_ingestion_service(
         run_id="12345678123456781234567812345678",
         ingested_at=datetime(2026, 9, 20, 12, 0, tzinfo=UTC),
     )
+
+
+def test_full_load_settings_reads_required_values_and_optional_token() -> None:
+    settings = FullLoadSettings.from_environment(
+        {
+            "GITHUB_ANALYTICS_CATALOG": "test_catalog",
+            "GITHUB_ANALYTICS_OWNER": "octo-org",
+            "GITHUB_ANALYTICS_REPOSITORY": "engineering-analytics",
+            "GITHUB_TOKEN": "test-token",
+        }
+    )
+
+    assert settings.catalog == "test_catalog"
+    assert settings.owner == "octo-org"
+    assert settings.repository == "engineering-analytics"
+    assert settings.github_token == "test-token"
+
+
+@pytest.mark.parametrize(
+    "missing_variable",
+    [
+        "GITHUB_ANALYTICS_CATALOG",
+        "GITHUB_ANALYTICS_OWNER",
+        "GITHUB_ANALYTICS_REPOSITORY",
+    ],
+)
+def test_full_load_settings_rejects_missing_required_values(
+    missing_variable: str,
+) -> None:
+    environment = {
+        "GITHUB_ANALYTICS_CATALOG": "test_catalog",
+        "GITHUB_ANALYTICS_OWNER": "octo-org",
+        "GITHUB_ANALYTICS_REPOSITORY": "engineering-analytics",
+    }
+    del environment[missing_variable]
+
+    with pytest.raises(ValueError, match=missing_variable):
+        FullLoadSettings.from_environment(environment)

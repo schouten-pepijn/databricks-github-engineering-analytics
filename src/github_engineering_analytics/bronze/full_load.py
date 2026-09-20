@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass
 from datetime import UTC, datetime
+from typing import Self
 from uuid import UUID, uuid4
 
 from pyspark.sql import SparkSession
@@ -15,6 +17,45 @@ from github_engineering_analytics.bronze.ingestion import (
 )
 from github_engineering_analytics.bronze.issues import DeltaBronzeIssueWriter
 from github_engineering_analytics.common.config import PipelineConfig
+
+
+@dataclass(frozen=True)
+class FullLoadSettings:
+    """Validated runtime configuration for one GitHub Issues full load run."""
+
+    catalog: str
+    owner: str
+    repository: str
+    github_token: str | None = None
+
+    @classmethod
+    def from_environment(
+        cls,
+        environment: Mapping[str, str],
+    ) -> Self:
+        """Create settings from explicitly named environment variables."""
+        required_variables = (
+            "GITHUB_ANALYTICS_CATALOG",
+            "GITHUB_ANALYTICS_OWNER",
+            "GITHUB_ANALYTICS_REPOSITORY",
+        )
+
+        if missing_variables := [
+            variable
+            for variable in required_variables
+            if not environment.get(variable, "").strip()
+        ]:
+            missing = ", ".join(missing_variables)
+            raise ValueError(f"Missing required environment variables: {missing}")
+
+        token = environment.get("GITHUB_TOKEN")
+
+        return cls(
+            catalog=environment["GITHUB_ANALYTICS_CATALOG"].strip(),
+            owner=environment["GITHUB_ANALYTICS_OWNER"].strip(),
+            repository=environment["GITHUB_ANALYTICS_REPOSITORY"].strip(),
+            github_token=token.strip() if token and token.strip() else None,
+        )
 
 
 def _current_utc_time() -> datetime:
