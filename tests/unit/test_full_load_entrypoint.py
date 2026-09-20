@@ -7,6 +7,7 @@ import pytest
 
 from github_engineering_analytics.bronze.full_load import (
     FullLoadSettings,
+    cli,
     main,
     resolve_github_token,
     run_full_load,
@@ -262,6 +263,31 @@ def test_main_accepts_named_job_parameters(
         owner="octo-org",
         repository="engineering-analytics",
         github_token="resolved-token",
+    )
+
+
+def test_cli_passes_databricks_named_parameters_to_main(mocker) -> None:
+    mocker.patch(
+        "sys.argv",
+        [
+            "github-engineering-analytics-full-load",
+            "--catalog=test_catalog",
+            "--owner=psf",
+            "--repository=requests",
+            "--token-secret-scope=github-engineering-analytics",
+            "--token-secret-key=github-token",
+        ],
+    )
+    run_main = mocker.patch("github_engineering_analytics.bronze.full_load.main")
+
+    cli()
+
+    run_main.assert_called_once_with(
+        catalog="test_catalog",
+        owner="psf",
+        repository="requests",
+        token_secret_scope="github-engineering-analytics",
+        token_secret_key="github-token",
     )
 
 
