@@ -3,9 +3,23 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Self
+from typing import ClassVar, Self
+
+from delta.tables import DeltaTable
+from pyspark.sql import SparkSession
+from pyspark.sql.types import (
+    BooleanType,
+    LongType,
+    StringType,
+    StructField,
+    StructType,
+    TimestampType,
+)
+
+from github_engineering_analytics.common.config import PipelineConfig
 
 
 @dataclass(frozen=True)
@@ -148,3 +162,165 @@ class SilverIssue:
             )
 
         return parsed.astimezone(UTC)
+
+
+class DeltaSilverIssueWriter:
+    """Persist the latest valid GitHub issue state at Silver grain.
+
+    Table grain: one row per repository owner, repository name, and GitHub
+    issue ID. Repeated or older source versions cannot create duplicate rows
+    or replace a newer issue state.
+    """
+
+    _UTC_TIMEZONES: ClassVar[frozenset[str]] = frozenset({"UTC", "Etc/UTC"})
+
+    _ROW_SCHEMA: ClassVar[StructType] = StructType(
+        [
+            StructField("repository_owner", StringType(), nullable=False),
+            StructField("repository_name", StringType(), nullable=False),
+            StructField("issue_id", LongType(), nullable=False),
+            StructField("issue_number", LongType(), nullable=False),
+            StructField("title", StringType(), nullable=False),
+            StructField("state", StringType(), nullable=False),
+            StructField("is_pull_request", BooleanType(), nullable=False),
+            StructField("created_at", TimestampType(), nullable=False),
+            StructField("updated_at", TimestampType(), nullable=False),
+            StructField("closed_at", TimestampType(), nullable=True),
+            StructField("source_run_id", StringType(), nullable=False),
+        ]
+    )
+
+    def __init__(
+        self,
+        spark: SparkSession,
+        config: PipelineConfig,
+    ) -> None:
+        self._spark = spark
+        self._schema_name = f"{config.catalog}.{config.silver_schema}"
+        self._table_name = config.silver_issues_table
+
+    def ensure_table(self) -> None:
+        """Create the Silver schema and latest-issue table when absent."""
+        self._require_utc_session()
+
+        self._spark.sql(
+            f"CREATE SCHEMA IF NOT EXISTS {self._quote_identifier(self._schema_name)}"
+        )
+
+        self._spark.sql(
+            "CREATE TABLE IF NOT EXISTS "
+            f"{self._quote_identifier(self._table_name)} ("
+            "repository_owner STRING NOT NULL, "
+            "repository_name STRING NOT NULL, "
+            "issue_id BIGINT NOT NULL, "
+            "issue_number BIGINT NOT NULL, "
+            "title STRING NOT NULL, "
+            "state STRING NOT NULL, "
+            "is_pull_request BOOLEAN NOT NULL, "
+            "created_at TIMESTAMP NOT NULL, "
+            "updated_at TIMESTAMP NOT NULL, "
+            "closed_at TIMESTAMP, "
+            "source_run_id STRING NOT NULL"
+            ") USING DELTA"
+        )
+
+    def upsert(self, records: Sequence[SilverIssue]) -> None:
+        """Merge valid records without allowing one batch to duplicate a key."""
+        if not records:
+            return
+
+        self._require_utc_session()
+        self._require_unique_business_keys(records)
+
+        source = self._spark.createDataFrame(
+            [
+                (
+                    record.repository_owner,
+                    record.repository_name,
+                    record.issue_id,
+                    record.issue_number,
+                    record.title,
+                    record.state,
+                    record.is_pull_request,
+                    record.created_at,
+                    record.updated_at,
+                    record.closed_at,
+                    record.source_run_id,
+                )
+                for record in records
+            ],
+            schema=self._ROW_SCHEMA,
+        )
+
+        target = DeltaTable.forName(self._spark, self._table_name)
+
+        (
+            target.alias("target")
+            .merge(
+                source.alias("source"),
+                (
+                    "target.repository_owner = source.repository_owner "
+                    "AND target.repository_name = source.repository_name "
+                    "AND target.issue_id = source.issue_id"
+                ),
+            )
+            .whenMatchedUpdate(
+                condition="source.updated_at >= target.updated_at",
+                set={
+                    "issue_number": "source.issue_number",
+                    "title": "source.title",
+                    "state": "source.state",
+                    "is_pull_request": "source.is_pull_request",
+                    "created_at": "source.created_at",
+                    "updated_at": "source.updated_at",
+                    "closed_at": "source.closed_at",
+                    "source_run_id": "source.source_run_id",
+                },
+            )
+            .whenNotMatchedInsert(
+                values={
+                    "repository_owner": "source.repository_owner",
+                    "repository_name": "source.repository_name",
+                    "issue_id": "source.issue_id",
+                    "issue_number": "source.issue_number",
+                    "title": "source.title",
+                    "state": "source.state",
+                    "is_pull_request": "source.is_pull_request",
+                    "created_at": "source.created_at",
+                    "updated_at": "source.updated_at",
+                    "closed_at": "source.closed_at",
+                    "source_run_id": "source.source_run_id",
+                },
+            )
+            .execute()
+        )
+
+    @staticmethod
+    def _require_unique_business_keys(records: Sequence[SilverIssue]) -> None:
+        """Reject batches that would match more than one source row per key."""
+        keys = {
+            (record.repository_owner, record.repository_name, record.issue_id)
+            for record in records
+        }
+
+        if len(keys) != len(records):
+            raise ValueError("records must have unique Silver business keys")
+
+    def _require_utc_session(self) -> None:
+        """Reject sessions that would interpret Delta timestamps differently."""
+        timezone = self._spark.conf.get("spark.sql.session.timeZone")
+
+        if timezone not in self._UTC_TIMEZONES:
+            raise RuntimeError(
+                "Spark session timezone must be UTC before writing Silver issues."
+            )
+
+    @staticmethod
+    def _quote_identifier(identifier: str) -> str:
+        """Quote every Unity Catalog identifier part and escape embedded backticks."""
+        parts = identifier.split(".")
+
+        if not all(parts):
+            raise ValueError(f"Invalid multipart identifier: {identifier!r}")
+
+        return ".".join(f"`{part.replace('`', '``')}`" for part in parts)
