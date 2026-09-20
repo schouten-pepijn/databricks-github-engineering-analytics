@@ -279,3 +279,71 @@ def test_resolve_github_token_rejects_blank_databricks_secret() -> None:
             spark=Mock(),
             secret_getter=Mock(return_value="   "),
         )
+
+
+def test_main_resolves_secret_reference_before_running_full_load(
+    mocker,
+) -> None:
+    spark = Mock()
+    settings = FullLoadSettings(
+        catalog="test_catalog",
+        owner="octo-org",
+        repository="engineering-analytics",
+        github_token_secret_scope="github-secrets",
+        github_token_secret_key="api-token",
+    )
+    expected_result = BronzeIngestionResult(
+        records_extracted=3,
+        batches_written=1,
+    )
+
+    mocker.patch(
+        "github_engineering_analytics.bronze.full_load._get_or_create_spark",
+        return_value=spark,
+    )
+    mocker.patch(
+        "github_engineering_analytics.bronze.full_load.FullLoadSettings.from_environment",
+        return_value=settings,
+    )
+    resolve_token = mocker.patch(
+        "github_engineering_analytics.bronze.full_load.resolve_github_token",
+        return_value="resolved-token",
+    )
+    full_load = mocker.patch(
+        "github_engineering_analytics.bronze.full_load.run_full_load",
+        return_value=expected_result,
+    )
+
+    main()
+
+    resolve_token.assert_called_once_with(
+        settings=settings,
+        spark=spark,
+    )
+    full_load.assert_called_once_with(
+        spark=spark,
+        catalog="test_catalog",
+        owner="octo-org",
+        repository="engineering-analytics",
+        github_token="resolved-token",
+    )
+
+
+def test_resolve_github_token_adds_context_when_secret_read_fails() -> None:
+    settings = FullLoadSettings(
+        catalog="test_catalog",
+        owner="octo-org",
+        repository="engineering-analytics",
+        github_token_secret_scope="github-secrets",
+        github_token_secret_key="api-token",
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match="github-secrets/api-token",
+    ):
+        resolve_github_token(
+            settings=settings,
+            spark=Mock(),
+            secret_getter=Mock(side_effect=RuntimeError("permission denied")),
+        )
