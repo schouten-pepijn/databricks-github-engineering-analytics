@@ -20,6 +20,10 @@ from github_engineering_analytics.bronze.ingestion import (
 )
 from github_engineering_analytics.bronze.issues import DeltaBronzeIssueWriter
 from github_engineering_analytics.common.config import PipelineConfig
+from github_engineering_analytics.control.pipeline_run import PipelineRun
+from github_engineering_analytics.control.pipeline_run_repository import (
+    DeltaPipelineRunRepository,
+)
 
 
 @dataclass(frozen=True)
@@ -180,9 +184,74 @@ def run_full_load(
     return ingestion.full_load(
         owner=owner,
         repository=repository,
-        run_id=run_id_factory().hex,
-        ingested_at=clock(),
+        run_id=run_id,
+        ingested_at=ingested_at,
     )
+
+
+def run_tracked_full_load(
+    *,
+    spark: SparkSession,
+    catalog: str,
+    owner: str,
+    repository: str,
+    github_token: str | None = None,
+    run_id_factory: Callable[[], UUID] = uuid4,
+    clock: Callable[[], datetime] = _current_utc_time,
+) -> BronzeIngestionResult:
+    """Persist a full-load lifecycle around Bronze ingestion.
+
+    A successful load transitions the run from RUNNING to SUCCEEDED. A Bronze
+    failure is recorded as FAILED before the original exception is re-raised.
+    """
+    config = PipelineConfig(catalog=catalog)
+    pipeline_runs = DeltaPipelineRunRepository(
+        spark=spark,
+        config=config,
+    )
+    pipeline_runs.ensure_table()
+
+    started_run = PipelineRun(
+        run_id=run_id_factory().hex,
+        source_name="github",
+        entity_name="issues",
+        started_at=clock(),
+        watermark_before=None,
+    )
+    pipeline_runs.record_started(started_run)
+
+    try:
+        result = run_full_load(
+            spark=spark,
+            catalog=catalog,
+            owner=owner,
+            repository=repository,
+            github_token=github_token,
+            run_id=started_run.run_id,
+            ingested_at=started_run.started_at,
+        )
+    except Exception as error:
+        failed_run = started_run.fail(
+            error_message=str(error).strip() or type(error).__name__,
+            finished_at=clock(),
+        )
+
+        try:
+            pipeline_runs.record_finished(failed_run)
+        except Exception:
+            logger.bind(run_id=started_run.run_id).exception(
+                "Failed to persist pipeline run failure."
+            )
+        raise
+
+    pipeline_runs.record_finished(
+        started_run.succeed(
+            candidate_watermark=None,
+            finished_at=clock(),
+        )
+    )
+
+    return result
 
 
 def main(
