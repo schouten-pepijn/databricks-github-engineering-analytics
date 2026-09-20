@@ -10,7 +10,7 @@ from typing import ClassVar, Self
 
 import pyspark.sql.functions as F
 from delta.tables import DeltaTable
-from pyspark.sql import DataFrame, SparkSession
+from pyspark.sql import DataFrame, SparkSession, Window
 from pyspark.sql.types import (
     BooleanType,
     LongType,
@@ -371,3 +371,138 @@ class DeltaSilverIssueWriter:
             raise ValueError(f"Invalid multipart identifier: {identifier!r}")
 
         return ".".join(f"`{part.replace('`', '``')}`" for part in parts)
+
+
+class BronzeIssueToSilverTransformer:
+    """Transform append-only Bronze issue history into current Silver issue rows."""
+
+    _REQUIRED_BRONZE_COLUMNS: ClassVar[frozenset[str]] = frozenset(
+        {
+            "repository_owner",
+            "repository_name",
+            "issue_id",
+            "source_updated_at",
+            "raw_json",
+            "_run_id",
+            "_ingested_at",
+            "_page_or_batch_reference",
+        }
+    )
+
+    _GITHUB_ISSUE_SCHEMA: ClassVar[StructType] = StructType(
+        [
+            StructField("id", LongType(), nullable=True),
+            StructField("number", LongType(), nullable=True),
+            StructField("title", StringType(), nullable=True),
+            StructField("state", StringType(), nullable=True),
+            StructField("created_at", StringType(), nullable=True),
+            StructField("updated_at", StringType(), nullable=True),
+            StructField("closed_at", StringType(), nullable=True),
+        ]
+    )
+
+    def transform(
+        self,
+        bronze: DataFrame,
+    ) -> DataFrame:
+        """Return one validated, latest Silver row per issue business key."""
+        self._require_required_columns(bronze)
+
+        parsed_rows = bronze.withColumn(
+            "_payload",
+            F.from_json(
+                F.col("raw_json"),
+                self._GITHUB_ISSUE_SCHEMA,
+            ),
+        )
+
+        normalized_rows = parsed_rows.select(
+            F.col("repository_owner"),
+            F.col("repository_name"),
+            F.col("issue_id"),
+            F.col("_payload.number").alias("issue_number"),
+            F.col("_payload.title").alias("title"),
+            F.col("_payload.state").alias("state"),
+            F.get_json_object(
+                F.col("raw_json"),
+                "$.pull_request",
+            )
+            .isNotNull()
+            .alias("is_pull_request"),
+            F.to_timestamp(F.col("_payload.created_at")).alias("created_at"),
+            F.to_timestamp(F.col("_payload.updated_at")).alias("updated_at"),
+            F.to_timestamp(F.col("_payload.closed_at")).alias("closed_at"),
+            F.col("_run_id").alias("source_run_id"),
+            # These remain temporarily to make latest-record selection explicit.
+            F.col("source_updated_at").alias("_source_updated_at"),
+            F.col("_ingested_at"),
+            F.col("_page_or_batch_reference"),
+            F.col("raw_json"),
+            F.col("_payload.id").alias("_payload_issue_id"),
+        )
+
+        self._require_valid_normalized_rows(normalized_rows)
+
+        latest_window = Window.partitionBy(
+            "repository_owner",
+            "repository_name",
+            "issue_id",
+        ).orderBy(
+            F.col("_source_updated_at").desc(),
+            F.col("_ingested_at").desc(),
+            F.col("source_run_id").desc(),
+            F.col("_page_or_batch_reference").desc(),
+            F.col("raw_json").desc(),
+        )
+
+        return (
+            normalized_rows.withColumn(
+                "_row_number",
+                F.row_number().over(latest_window),
+            )
+            .where(F.col("_row_number") == 1)
+            .select(
+                "repository_owner",
+                "repository_name",
+                "issue_id",
+                "issue_number",
+                "title",
+                "state",
+                "is_pull_request",
+                "created_at",
+                "updated_at",
+                "closed_at",
+                "source_run_id",
+            )
+        )
+
+    def _require_required_columns(
+        self,
+        bronze: DataFrame,
+    ) -> None:
+        """Reject Bronze DataFrames that cannot satisfy the Silver contract."""
+
+        if missing_columns := self._REQUIRED_BRONZE_COLUMNS - set(bronze.columns):
+            raise ValueError(
+                f"Bronze source is missing required columns: {sorted(missing_columns)}"
+            )
+
+    @staticmethod
+    def _require_valid_normalized_rows(rows: DataFrame) -> None:
+        """Fail before MERGE when Bronze JSON cannot form valid Silver records."""
+        invalid_rows = rows.where(
+            F.col("_payload_issue_id").isNull()
+            | (F.col("_payload_issue_id") != F.col("issue_id"))
+            | F.col("issue_number").isNull()
+            | F.col("title").isNull()
+            | (F.length(F.trim(F.col("title"))) == 0)
+            | F.col("state").isNull()
+            | (F.length(F.trim(F.col("state"))) == 0)
+            | F.col("created_at").isNull()
+            | F.col("updated_at").isNull()
+        )
+
+        if invalid_rows.limit(1).count():
+            raise ValueError(
+                "Bronze source contains rows that cannot form valid Silver issues"
+            )
