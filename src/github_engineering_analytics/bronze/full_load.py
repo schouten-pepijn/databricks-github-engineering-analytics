@@ -6,7 +6,7 @@ import os
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Self
+from typing import Protocol, Self
 from uuid import UUID, uuid4
 
 from loguru import logger
