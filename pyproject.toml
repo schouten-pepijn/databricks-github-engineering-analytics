@@ -1,6 +1,6 @@
 [project]
 name = "github_engineering_analytics"
-version = "0.1.2"
+version = "0.2.0"
 authors = [{ name = "pepijnsch@gmail.com" }]
 requires-python = ">=3.12,<3.13"
 dependencies = [
@@ -30,7 +30,7 @@ dev = [
 ]
 
 [tool.bumpversion]
-current_version = "0.1.2"
+current_version = "0.2.0"
 allow_dirty = false
 commit = true
 message = "chore(release): v{new_version}"
