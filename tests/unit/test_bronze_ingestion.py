@@ -4,6 +4,40 @@ from unittest.mock import Mock
 import pytest
 
 from github_engineering_analytics.bronze.ingestion import GitHubIssueBronzeIngestion
+from github_engineering_analytics.control.watermark import Watermark
+
+
+def test_incremental_load_uses_overlap_adjusted_watermark() -> None:
+    client = Mock()
+    client.iter_issues.return_value = iter(
+        [{"id": 123, "updated_at": "2026-09-20T12:03:00Z"}]
+    )
+    writer = Mock()
+    ingestion = GitHubIssueBronzeIngestion(client=client, writer=writer)
+
+    watermark = Watermark(
+        value=datetime(2026, 9, 20, 12, 0, tzinfo=UTC),
+        overlap_seconds=300,
+    )
+    expected_since = datetime(2026, 9, 20, 11, 55, tzinfo=UTC)
+
+    result = ingestion.incremental_load(
+        owner="delta-io",
+        repository="delta",
+        run_id="run-456",
+        ingested_at=datetime(2026, 9, 20, 12, 5, tzinfo=UTC),
+        watermark=watermark,
+    )
+
+    assert result.records_extracted == 1
+    client.iter_issues.assert_called_once_with(
+        owner="delta-io",
+        repository="delta",
+        since=expected_since,
+    )
+
+    written_records = writer.append.call_args.args[0]
+    assert written_records[0].request_watermark == expected_since
 
 
 def test_full_load_returns_zero_counts_without_writing_records() -> None:

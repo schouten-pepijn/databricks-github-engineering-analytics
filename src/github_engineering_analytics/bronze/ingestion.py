@@ -11,6 +11,7 @@ from github_engineering_analytics.bronze.issues import (
     BronzeIssueRecord,
     DeltaBronzeIssueWriter,
 )
+from github_engineering_analytics.control.watermark import Watermark
 
 
 @dataclass(frozen=True)
@@ -42,17 +43,54 @@ class GitHubIssueBronzeIngestion:
         batch_size: int = 100,
     ) -> BronzeIngestionResult:
         """Extract all issues and append them to Bronze in bounded batches."""
+        return self._ingest(
+            owner=owner,
+            repository=repository,
+            run_id=run_id,
+            ingested_at=ingested_at,
+            request_watermark=None,
+            batch_size=batch_size,
+        )
+
+    def incremental_load(
+        self,
+        *,
+        owner: str,
+        repository: str,
+        run_id: str,
+        ingested_at: datetime,
+        watermark: Watermark,
+        batch_size: int = 100,
+    ) -> BronzeIngestionResult:
+        """Extract issues since the overlap-adjusted committed watermark."""
+        return self._ingest(
+            owner=owner,
+            repository=repository,
+            run_id=run_id,
+            ingested_at=ingested_at,
+            request_watermark=watermark.extraction_start,
+            batch_size=batch_size,
+        )
+
+    def _ingest(
+        self,
+        *,
+        owner: str,
+        repository: str,
+        run_id: str,
+        ingested_at: datetime,
+        request_watermark: datetime | None,
+        batch_size: int,
+    ) -> BronzeIngestionResult:
+        """Share batching and Bronze mapping across full and incremental loads."""
         if batch_size <= 0:
             raise ValueError("batch_size must be positive")
 
         self._writer.ensure_table()
-
-        # A full load deliberately has no source boundary. Incremental loading
-        # will supply the overlap-adjusted watermark through a separate path.
         issues = self._client.iter_issues(
             owner=owner,
             repository=repository,
-            since=None,
+            since=request_watermark,
         )
 
         records_extracted = 0
@@ -69,7 +107,7 @@ class GitHubIssueBronzeIngestion:
                     payload=payload,
                     run_id=run_id,
                     ingested_at=ingested_at,
-                    request_watermark=None,
+                    request_watermark=request_watermark,
                     page_or_batch_reference=f"batch-{batch_number}",
                 )
                 for payload in payload_batch
