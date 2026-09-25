@@ -10,7 +10,10 @@ from github_engineering_analytics.control.watermark import Watermark
 def test_incremental_load_uses_overlap_adjusted_watermark() -> None:
     client = Mock()
     client.iter_issues.return_value = iter(
-        [{"id": 123, "updated_at": "2026-09-20T12:03:00Z"}]
+        [
+            {"id": 123, "updated_at": "2026-09-20T12:03:00Z"},
+            {"id": 124, "updated_at": "2026-09-20T12:04:00Z"},
+        ]
     )
     writer = Mock()
     ingestion = GitHubIssueBronzeIngestion(client=client, writer=writer)
@@ -29,7 +32,11 @@ def test_incremental_load_uses_overlap_adjusted_watermark() -> None:
         watermark=watermark,
     )
 
-    assert result.records_extracted == 1
+    assert result.records_extracted == 2
+    assert result.candidate_watermark == Watermark(
+        value=datetime(2026, 9, 20, 12, 4, tzinfo=UTC),
+        overlap_seconds=300,
+    )
     client.iter_issues.assert_called_once_with(
         owner="delta-io",
         repository="delta",
@@ -38,6 +45,29 @@ def test_incremental_load_uses_overlap_adjusted_watermark() -> None:
 
     written_records = writer.append.call_args.args[0]
     assert written_records[0].request_watermark == expected_since
+
+
+def test_incremental_load_candidate_watermark_does_not_move_backwards() -> None:
+    client = Mock()
+    client.iter_issues.return_value = iter(
+        [{"id": 123, "updated_at": "2026-09-20T11:59:00Z"}]
+    )
+    writer = Mock()
+    ingestion = GitHubIssueBronzeIngestion(client=client, writer=writer)
+    committed_watermark = Watermark(
+        value=datetime(2026, 9, 20, 12, 0, tzinfo=UTC),
+        overlap_seconds=300,
+    )
+
+    result = ingestion.incremental_load(
+        owner="delta-io",
+        repository="delta",
+        run_id="run-456",
+        ingested_at=datetime(2026, 9, 20, 12, 5, tzinfo=UTC),
+        watermark=committed_watermark,
+    )
+
+    assert result.candidate_watermark == committed_watermark
 
 
 def test_full_load_returns_zero_counts_without_writing_records() -> None:

@@ -20,6 +20,7 @@ class BronzeIngestionResult:
 
     records_extracted: int
     batches_written: int
+    candidate_watermark: Watermark | None = None
 
 
 class GitHubIssueBronzeIngestion:
@@ -48,7 +49,7 @@ class GitHubIssueBronzeIngestion:
             repository=repository,
             run_id=run_id,
             ingested_at=ingested_at,
-            request_watermark=None,
+            watermark=None,
             batch_size=batch_size,
         )
 
@@ -68,7 +69,7 @@ class GitHubIssueBronzeIngestion:
             repository=repository,
             run_id=run_id,
             ingested_at=ingested_at,
-            request_watermark=watermark.extraction_start,
+            watermark=watermark,
             batch_size=batch_size,
         )
 
@@ -79,13 +80,16 @@ class GitHubIssueBronzeIngestion:
         repository: str,
         run_id: str,
         ingested_at: datetime,
-        request_watermark: datetime | None,
+        watermark: Watermark | None,
         batch_size: int,
     ) -> BronzeIngestionResult:
         """Share batching and Bronze mapping across full and incremental loads."""
         if batch_size <= 0:
             raise ValueError("batch_size must be positive")
 
+        request_watermark = (
+            watermark.extraction_start if watermark is not None else None
+        )
         self._writer.ensure_table()
         issues = self._client.iter_issues(
             owner=owner,
@@ -95,6 +99,7 @@ class GitHubIssueBronzeIngestion:
 
         records_extracted = 0
         batches_written = 0
+        latest_source_updated_at: datetime | None = None
 
         for batch_number, payload_batch in enumerate(
             batched(issues, batch_size),
@@ -116,8 +121,27 @@ class GitHubIssueBronzeIngestion:
             self._writer.append(records)
             records_extracted += len(records)
             batches_written += 1
+            latest_in_batch = max(record.source_updated_at for record in records)
+            if (
+                latest_source_updated_at is None
+                or latest_in_batch > latest_source_updated_at
+            ):
+                latest_source_updated_at = latest_in_batch
+
+        candidate_watermark: Watermark | None = None
+        if latest_source_updated_at is not None:
+            candidate_value = latest_source_updated_at
+            if watermark is not None:
+                candidate_value = max(candidate_value, watermark.value)
+                candidate_watermark = Watermark(
+                    value=candidate_value,
+                    overlap_seconds=watermark.overlap_seconds,
+                )
+            else:
+                candidate_watermark = Watermark(value=candidate_value)
 
         return BronzeIngestionResult(
             records_extracted=records_extracted,
             batches_written=batches_written,
+            candidate_watermark=candidate_watermark,
         )
