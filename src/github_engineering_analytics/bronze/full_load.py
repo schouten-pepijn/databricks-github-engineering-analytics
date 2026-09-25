@@ -257,7 +257,7 @@ def run_tracked_full_load(
 
     pipeline_runs.record_finished(
         started_run.succeed(
-            candidate_watermark=None,
+            candidate_watermark=result.candidate_watermark,
             finished_at=clock(),
         )
     )
