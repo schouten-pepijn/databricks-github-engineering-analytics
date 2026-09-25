@@ -24,6 +24,7 @@ from github_engineering_analytics.control.pipeline_run import PipelineRun
 from github_engineering_analytics.control.pipeline_run_repository import (
     DeltaPipelineRunRepository,
 )
+from github_engineering_analytics.silver.full_load import run_bronze_to_silver
 
 
 @dataclass(frozen=True)
@@ -200,11 +201,12 @@ def run_tracked_full_load(
     run_id_factory: Callable[[], UUID] = uuid4,
     clock: Callable[[], datetime] = _current_utc_time,
 ) -> BronzeIngestionResult:
-    """Persist a full-load lifecycle around Bronze ingestion.
+    """Persist the lifecycle around Bronze ingestion and Silver processing.
 
-    A successful load transitions the run from RUNNING to SUCCEEDED. A Bronze
+    The run succeeds only after both stages complete. A Bronze or Silver
     failure is recorded as FAILED before the original exception is re-raised.
     """
+
     config = PipelineConfig(catalog=catalog)
     pipeline_runs = DeltaPipelineRunRepository(
         spark=spark,
@@ -230,6 +232,12 @@ def run_tracked_full_load(
             github_token=github_token,
             run_id=started_run.run_id,
             ingested_at=started_run.started_at,
+        )
+
+        run_bronze_to_silver(
+            spark=spark,
+            catalog=catalog,
+            bronze_run_id=started_run.run_id,
         )
     except Exception as error:
         failed_run = started_run.fail(
