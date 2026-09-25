@@ -8,6 +8,7 @@ from github_engineering_analytics.bronze.full_load import run_tracked_full_load
 from github_engineering_analytics.bronze.ingestion import BronzeIngestionResult
 from github_engineering_analytics.common.config import PipelineConfig
 from github_engineering_analytics.control.pipeline_run import PipelineRunStatus
+from github_engineering_analytics.control.watermark import Watermark
 
 
 def test_run_tracked_full_load_records_silver_failure_and_reraises(
@@ -77,7 +78,14 @@ def test_run_tracked_full_load_records_silver_failure_and_reraises(
 def test_run_tracked_full_load_records_a_successful_lifecycle(mocker) -> None:
     spark = Mock()
     repository = Mock()
-    result = BronzeIngestionResult(records_extracted=3, batches_written=1)
+    result = BronzeIngestionResult(
+        records_extracted=3,
+        batches_written=1,
+        candidate_watermark=Watermark(
+            value=datetime(2026, 9, 20, 12, 3, tzinfo=UTC),
+            overlap_seconds=300,
+        ),
+    )
     started_at = datetime(2026, 9, 20, 12, 0, tzinfo=UTC)
     finished_at = datetime(2026, 9, 20, 12, 5, tzinfo=UTC)
     expected_run_id = "12345678123456781234567812345678"
@@ -130,7 +138,10 @@ def test_run_tracked_full_load_records_a_successful_lifecycle(mocker) -> None:
     assert finished_run.run_id == started_run.run_id
     assert finished_run.status is PipelineRunStatus.SUCCEEDED
     assert finished_run.finished_at == finished_at
-    assert finished_run.candidate_watermark is None
+    assert finished_run.candidate_watermark == Watermark(
+        value=datetime(2026, 9, 20, 12, 3, tzinfo=UTC),
+        overlap_seconds=300,
+    )
 
     assert pipeline_calls.mock_calls == [
         call.bronze(
@@ -180,3 +191,42 @@ def test_run_tracked_full_load_records_failure_and_reraises(mocker) -> None:
     assert failed_run.status is PipelineRunStatus.FAILED
     assert failed_run.finished_at == finished_at
     assert failed_run.error_message == "GitHub request timed out"
+
+
+def test_run_tracked_full_load_records_no_candidate_for_empty_extraction(
+    mocker,
+) -> None:
+    spark = Mock()
+    repository = Mock()
+    started_at = datetime(2026, 9, 20, 12, 0, tzinfo=UTC)
+    finished_at = datetime(2026, 9, 20, 12, 5, tzinfo=UTC)
+
+    mocker.patch(
+        "github_engineering_analytics.bronze.full_load.DeltaPipelineRunRepository",
+        return_value=repository,
+    )
+    mocker.patch(
+        "github_engineering_analytics.bronze.full_load.run_full_load",
+        return_value=BronzeIngestionResult(
+            records_extracted=0,
+            batches_written=0,
+            candidate_watermark=None,
+        ),
+    )
+    mocker.patch(
+        "github_engineering_analytics.bronze.full_load.run_bronze_to_silver",
+    )
+
+    run_tracked_full_load(
+        spark=spark,
+        catalog="test_catalog",
+        owner="psf",
+        repository="requests",
+        run_id_factory=lambda: UUID("12345678-1234-5678-1234-567812345678"),
+        clock=Mock(side_effect=[started_at, finished_at]),
+    )
+
+    finished_run = repository.record_finished.call_args.args[0]
+
+    assert finished_run.status is PipelineRunStatus.SUCCEEDED
+    assert finished_run.candidate_watermark is None
