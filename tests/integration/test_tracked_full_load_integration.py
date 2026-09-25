@@ -17,13 +17,18 @@ from github_engineering_analytics.common.config import PipelineConfig
 pytestmark = pytest.mark.integration
 
 
-def test_tracked_full_load_persists_bronze_data_and_successful_run(
+def test_tracked_full_load_persists_bronze_silver_and_successful_run(
     integration_spark: SparkSession,
     mocker,
 ) -> None:
-    """Persist one mocked issue and its RUNNING-to-SUCCEEDED lifecycle."""
+    """Persist Bronze and Silver data with a successful tracked lifecycle."""
     catalog = os.environ["DATABRICKS_TEST_CATALOG"]
     config = PipelineConfig(catalog=catalog)
+
+    run_uuid = uuid4()
+    run_id = run_uuid.hex
+    repository_name = f"tracked-full-load-{run_id}"
+
     client = Mock()
     client.iter_issues.return_value = iter(
         [
@@ -31,7 +36,10 @@ def test_tracked_full_load_persists_bronze_data_and_successful_run(
                 "id": 123,
                 "number": 42,
                 "title": "Tracked full-load integration test",
+                "state": "open",
+                "created_at": "2026-09-20T12:00:00Z",
                 "updated_at": "2026-09-20T12:03:00Z",
+                "closed_at": None,
             }
         ]
     )
@@ -40,8 +48,6 @@ def test_tracked_full_load_persists_bronze_data_and_successful_run(
         return_value=client,
     )
 
-    run_uuid = uuid4()
-    run_id = run_uuid.hex
     started_at = datetime(2026, 9, 20, 12, 0, tzinfo=UTC)
     finished_at = datetime(2026, 9, 20, 12, 5, tzinfo=UTC)
 
@@ -50,7 +56,7 @@ def test_tracked_full_load_persists_bronze_data_and_successful_run(
             spark=integration_spark,
             catalog=catalog,
             owner="pytest",
-            repository="tracked-full-load",
+            repository=repository_name,
             run_id_factory=lambda: UUID(hex=run_id),
             clock=Mock(side_effect=[started_at, finished_at]),
         )
@@ -61,7 +67,7 @@ def test_tracked_full_load_persists_bronze_data_and_successful_run(
         )
         client.iter_issues.assert_called_once_with(
             owner="pytest",
-            repository="tracked-full-load",
+            repository=repository_name,
             since=None,
         )
 
@@ -69,6 +75,17 @@ def test_tracked_full_load_persists_bronze_data_and_successful_run(
             integration_spark.table(config.bronze_issues_table)
             .where(F.col("_run_id") == run_id)
             .select("issue_id", "repository_owner", "repository_name")
+            .limit(2)
+            .collect()
+        )
+        silver_rows = (
+            integration_spark.table(config.silver_issues_table)
+            .where(
+                (F.col("repository_owner") == "pytest")
+                & (F.col("repository_name") == repository_name)
+                & (F.col("issue_id") == 123)
+            )
+            .select("title", "state", "source_run_id")
             .limit(2)
             .collect()
         )
@@ -95,7 +112,13 @@ def test_tracked_full_load_persists_bronze_data_and_successful_run(
         assert bronze_rows[0].asDict() == {
             "issue_id": 123,
             "repository_owner": "pytest",
-            "repository_name": "tracked-full-load",
+            "repository_name": repository_name,
+        }
+        assert len(silver_rows) == 1
+        assert silver_rows[0].asDict() == {
+            "title": "Tracked full-load integration test",
+            "state": "open",
+            "source_run_id": run_id,
         }
         assert len(pipeline_run_rows) == 1
         assert pipeline_run_rows[0].asDict() == {
@@ -107,9 +130,16 @@ def test_tracked_full_load_persists_bronze_data_and_successful_run(
             "finished_at_utc": "2026-09-20T12:05:00Z",
         }
     finally:
-        # The generated run ID isolates cleanup from job-produced records.
+        # The generated run ID and repository name keep cleanup isolated.
         DeltaTable.forName(integration_spark, config.bronze_issues_table).delete(
             condition=f"_run_id = '{run_id}'"
+        )
+        DeltaTable.forName(integration_spark, config.silver_issues_table).delete(
+            condition=(
+                "repository_owner = 'pytest' "
+                f"AND repository_name = '{repository_name}' "
+                "AND issue_id = 123"
+            )
         )
         DeltaTable.forName(integration_spark, config.pipeline_runs_table).delete(
             condition=f"run_id = '{run_id}'"
