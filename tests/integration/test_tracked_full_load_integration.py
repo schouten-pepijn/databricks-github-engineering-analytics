@@ -146,6 +146,111 @@ def test_tracked_full_load_persists_bronze_silver_and_successful_run(
         )
 
 
+def test_tracked_full_load_persists_silver_failure_and_bronze_rows(
+    integration_spark: SparkSession,
+    mocker,
+) -> None:
+    """Persist Bronze rows and a failed lifecycle when Silver processing fails."""
+    catalog = os.environ["DATABRICKS_TEST_CATALOG"]
+    config = PipelineConfig(catalog=catalog)
+
+    run_uuid = uuid4()
+    run_id = run_uuid.hex
+    repository_name = f"tracked-silver-failure-{run_id}"
+
+    client = Mock()
+    client.iter_issues.return_value = iter(
+        [
+            {
+                "id": 123,
+                "number": 42,
+                "title": "Silver failure integration test",
+                "state": "open",
+                "created_at": "2026-09-20T12:00:00Z",
+                "updated_at": "2026-09-20T12:03:00Z",
+                "closed_at": None,
+            }
+        ]
+    )
+    mocker.patch(
+        "github_engineering_analytics.bronze.full_load.GitHubClient",
+        return_value=client,
+    )
+
+    silver_failure = RuntimeError("Silver processing failed")
+    silver_load = mocker.patch(
+        "github_engineering_analytics.bronze.full_load.run_bronze_to_silver",
+        side_effect=silver_failure,
+    )
+
+    started_at = datetime(2026, 9, 20, 12, 0, tzinfo=UTC)
+    finished_at = datetime(2026, 9, 20, 12, 5, tzinfo=UTC)
+
+    try:
+        with pytest.raises(
+            RuntimeError,
+            match="Silver processing failed",
+        ) as exc_info:
+            run_tracked_full_load(
+                spark=integration_spark,
+                catalog=catalog,
+                owner="pytest",
+                repository=repository_name,
+                run_id_factory=lambda: UUID(hex=run_id),
+                clock=Mock(side_effect=[started_at, finished_at]),
+            )
+
+        assert exc_info.value is silver_failure
+        client.iter_issues.assert_called_once_with(
+            owner="pytest",
+            repository=repository_name,
+            since=None,
+        )
+        silver_load.assert_called_once_with(
+            spark=integration_spark,
+            catalog=catalog,
+            bronze_run_id=run_id,
+        )
+
+        bronze_rows = (
+            integration_spark.table(config.bronze_issues_table)
+            .where(F.col("_run_id") == run_id)
+            .select("issue_id")
+            .limit(2)
+            .collect()
+        )
+        pipeline_run_rows = (
+            integration_spark.table(config.pipeline_runs_table)
+            .where(F.col("run_id") == run_id)
+            .select(
+                "status",
+                "error_message",
+                F.date_format("finished_at", "yyyy-MM-dd'T'HH:mm:ss'Z'").alias(
+                    "finished_at_utc"
+                ),
+            )
+            .limit(2)
+            .collect()
+        )
+
+        assert len(bronze_rows) == 1
+        assert bronze_rows[0]["issue_id"] == 123
+        assert len(pipeline_run_rows) == 1
+        assert pipeline_run_rows[0].asDict() == {
+            "status": "failed",
+            "error_message": "Silver processing failed",
+            "finished_at_utc": "2026-09-20T12:05:00Z",
+        }
+    finally:
+        # Remove only the Bronze and control rows created by this test run.
+        DeltaTable.forName(integration_spark, config.bronze_issues_table).delete(
+            condition=f"_run_id = '{run_id}'"
+        )
+        DeltaTable.forName(integration_spark, config.pipeline_runs_table).delete(
+            condition=f"run_id = '{run_id}'"
+        )
+
+
 def test_tracked_full_load_persists_failure_without_bronze_rows(
     integration_spark: SparkSession,
     mocker,
