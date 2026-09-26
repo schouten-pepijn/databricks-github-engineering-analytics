@@ -3,9 +3,22 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Self
+from typing import ClassVar, Self
+
+from delta.tables import DeltaTable
+from pyspark.sql import SparkSession
+from pyspark.sql.types import (
+    LongType,
+    StringType,
+    StructField,
+    StructType,
+    TimestampType,
+)
+
+from github_engineering_analytics.common.config import PipelineConfig
 
 
 @dataclass(frozen=True)
@@ -116,3 +129,131 @@ class SilverUser:
             raise ValueError(f"{field_path} must be a non-empty string")
 
         return value
+
+
+class DeltaSilverUserWriter:
+    """Persist the latest observed GitHub user state at Silver grain."""
+
+    _UTC_TIMEZONES: ClassVar[frozenset[str]] = frozenset({"UTC", "Etc/UTC"})
+
+    _ROW_SCHEMA: ClassVar[StructType] = StructType(
+        [
+            StructField("user_id", LongType(), nullable=False),
+            StructField("login", StringType(), nullable=False),
+            StructField("user_type", StringType(), nullable=False),
+            StructField("source_issue_id", LongType(), nullable=False),
+            StructField("observed_at", TimestampType(), nullable=False),
+            StructField("source_run_id", StringType(), nullable=False),
+        ]
+    )
+
+    def __init__(
+        self,
+        spark: SparkSession,
+        config: PipelineConfig,
+    ) -> None:
+        self._spark = spark
+        self._schema_name = f"{config.catalog}.{config.silver_schema}"
+        self._table_name = config.silver_users_table
+
+    def ensure_table(self) -> None:
+        """Create the Silver schema and global GitHub users table when absent."""
+        self._require_utc_session()
+
+        self._spark.sql(
+            f"CREATE SCHEMA IF NOT EXISTS {self._quote_identifier(self._schema_name)}"
+        )
+        self._spark.sql(
+            "CREATE TABLE IF NOT EXISTS "
+            f"{self._quote_identifier(self._table_name)} ("
+            "user_id BIGINT NOT NULL, "
+            "login STRING NOT NULL, "
+            "user_type STRING NOT NULL, "
+            "source_issue_id BIGINT NOT NULL, "
+            "observed_at TIMESTAMP NOT NULL, "
+            "source_run_id STRING NOT NULL"
+            ") USING DELTA"
+        )
+
+    def upsert(
+        self,
+        records: Sequence[SilverUser],
+    ) -> None:
+        """Merge one unique, validated observation per global GitHub user ID."""
+        if not records:
+            return
+
+        self._require_utc_session()
+        self._require_unique_user_ids(records)
+
+        source = self._spark.createDataFrame(
+            [
+                (
+                    record.user_id,
+                    record.login,
+                    record.user_type,
+                    record.source_issue_id,
+                    record.observed_at,
+                    record.source_run_id,
+                )
+                for record in records
+            ],
+            schema=self._ROW_SCHEMA,
+        )
+
+        target = DeltaTable.forName(self._spark, self._table_name)
+        (
+            target.alias("target")
+            .merge(
+                source.alias("source"),
+                "target.user_id = source.user_id",
+            )
+            .whenMatchedUpdate(
+                condition="source.observed_at >= target.observed_at",
+                set={
+                    "login": "source.login",
+                    "user_type": "source.user_type",
+                    "source_issue_id": "source.source_issue_id",
+                    "observed_at": "source.observed_at",
+                    "source_run_id": "source.source_run_id",
+                },
+            )
+            .whenNotMatchedInsert(
+                values={
+                    "user_id": "source.user_id",
+                    "login": "source.login",
+                    "user_type": "source.user_type",
+                    "source_issue_id": "source.source_issue_id",
+                    "observed_at": "source.observed_at",
+                    "source_run_id": "source.source_run_id",
+                },
+            )
+            .execute()
+        )
+
+    @staticmethod
+    def _require_unique_user_ids(records: Sequence[SilverUser]) -> None:
+        """Reject a batch that would supply multiple rows for one MERGE key."""
+        user_ids = {record.user_id for record in records}
+
+        if len(user_ids) != len(records):
+            raise ValueError("records must have unique Silver user IDs")
+
+    def _require_utc_session(self) -> None:
+        """Reject sessions that would interpret user observations ambiguously."""
+        timezone = self._spark.conf.get("spark.sql.session.timeZone")
+
+        if timezone not in self._UTC_TIMEZONES:
+            raise RuntimeError(
+                "Spark session timezone must be UTC before writing Silver users."
+            )
+
+    @staticmethod
+    def _quote_identifier(identifier: str) -> str:
+        """Quote each Unity Catalog identifier part."""
+        parts = identifier.split(".")
+
+        if not all(parts):
+            raise ValueError(f"Invalid multipart identifier: {identifier!r}")
+
+        return ".".join(f"`{part.replace('`', '``')}`" for part in parts)
