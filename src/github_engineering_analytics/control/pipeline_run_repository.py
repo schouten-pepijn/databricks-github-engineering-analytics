@@ -16,6 +16,10 @@ from pyspark.sql.types import (
 )
 
 from github_engineering_analytics.common.config import PipelineConfig
+from github_engineering_analytics.common.delta_contracts import (
+    quote_multipart_identifier,
+    require_utc_spark_session,
+)
 from github_engineering_analytics.control.pipeline_run import (
     PipelineRun,
     PipelineRunStatus,
@@ -24,8 +28,6 @@ from github_engineering_analytics.control.pipeline_run import (
 
 class DeltaPipelineRunRepository:
     """Create and later persist one Delta row per pipeline run."""
-
-    _UTC_TIMEZONES: ClassVar[frozenset[str]] = frozenset({"UTC", "Etc/UTC"})
 
     # Keep this aligned with ensure_table(). An explicit schema prevents Spark
     # from inferring nullable fields or timestamp types from a single row.
@@ -65,15 +67,19 @@ class DeltaPipelineRunRepository:
 
     def ensure_table(self) -> None:
         """Create the control schema and one-row-per-run Delta table when absent."""
-        self._require_utc_session()
+        require_utc_spark_session(
+            self._spark,
+            operation="reading or writing pipeline runs",
+        )
 
         self._spark.sql(
-            f"CREATE SCHEMA IF NOT EXISTS {self._quote_identifier(self._schema_name)}"
+            "CREATE SCHEMA IF NOT EXISTS "
+            f"{quote_multipart_identifier(self._schema_name)}"
         )
 
         self._spark.sql(
             "CREATE TABLE IF NOT EXISTS "
-            f"{self._quote_identifier(self._table_name)} ("
+            f"{quote_multipart_identifier(self._table_name)} ("
             "run_id STRING NOT NULL, "
             "source_name STRING NOT NULL, "
             "entity_name STRING NOT NULL, "
@@ -98,7 +104,10 @@ class DeltaPipelineRunRepository:
         if run.status is not PipelineRunStatus.RUNNING:
             raise ValueError("record_started requires a running pipeline run")
 
-        self._require_utc_session()
+        require_utc_spark_session(
+            self._spark,
+            operation="reading or writing pipeline runs",
+        )
 
         source = self._create_source_dataframe(run)
 
@@ -150,7 +159,10 @@ class DeltaPipelineRunRepository:
                 "record_finished requires a succeeded or failed pipeline run"
             )
 
-        self._require_utc_session()
+        require_utc_spark_session(
+            self._spark,
+            operation="reading or writing pipeline runs",
+        )
         self._require_existing_running_run(run.run_id)
 
         source = self._create_source_dataframe(run)
@@ -244,23 +256,3 @@ class DeltaPipelineRunRepository:
                 "Pipeline run must be running before it can finish: "
                 f"run_id={run_id!r}, status={status!r}"
             )
-
-    def _require_utc_session(self) -> None:
-        """Reject sessions that would interpret Delta timestamps differently."""
-        session_timezone = self._spark.conf.get("spark.sql.session.timeZone")
-
-        if session_timezone not in self._UTC_TIMEZONES:
-            raise RuntimeError(
-                "Spark session timezone must be UTC before reading "
-                "or writing pipeline runs."
-            )
-
-    @staticmethod
-    def _quote_identifier(identifier: str) -> str:
-        """Quote every Unity Catalog identifier part and escape embedded backticks."""
-        parts = identifier.split(".")
-
-        if not all(parts):
-            raise ValueError(f"Invalid multipart identifier: {identifier!r}")
-
-        return ".".join(f"`{part.replace('`', '``')}`" for part in parts)

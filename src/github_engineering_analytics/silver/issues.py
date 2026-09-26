@@ -21,6 +21,14 @@ from pyspark.sql.types import (
 )
 
 from github_engineering_analytics.common.config import PipelineConfig
+from github_engineering_analytics.common.delta_contracts import (
+    quote_multipart_identifier,
+    require_utc_spark_session,
+)
+from github_engineering_analytics.silver.contracts import (
+    require_required_columns,
+    require_unique_dataframe_keys,
+)
 
 
 @dataclass(frozen=True)
@@ -173,8 +181,6 @@ class DeltaSilverIssueWriter:
     or replace a newer issue state.
     """
 
-    _UTC_TIMEZONES: ClassVar[frozenset[str]] = frozenset({"UTC", "Etc/UTC"})
-
     _ROW_SCHEMA: ClassVar[StructType] = StructType(
         [
             StructField("repository_owner", StringType(), nullable=False),
@@ -203,15 +209,19 @@ class DeltaSilverIssueWriter:
 
     def ensure_table(self) -> None:
         """Create the Silver schema and latest-issue table when absent."""
-        self._require_utc_session()
+        require_utc_spark_session(
+            self._spark,
+            operation="writing Silver issues",
+        )
 
         self._spark.sql(
-            f"CREATE SCHEMA IF NOT EXISTS {self._quote_identifier(self._schema_name)}"
+            "CREATE SCHEMA IF NOT EXISTS "
+            f"{quote_multipart_identifier(self._schema_name)}"
         )
 
         self._spark.sql(
             "CREATE TABLE IF NOT EXISTS "
-            f"{self._quote_identifier(self._table_name)} ("
+            f"{quote_multipart_identifier(self._table_name)} ("
             "repository_owner STRING NOT NULL, "
             "repository_name STRING NOT NULL, "
             "issue_id BIGINT NOT NULL, "
@@ -231,7 +241,10 @@ class DeltaSilverIssueWriter:
         if not records:
             return
 
-        self._require_utc_session()
+        require_utc_spark_session(
+            self._spark,
+            operation="writing Silver issues",
+        )
         self._require_unique_business_keys(records)
 
         source = self._spark.createDataFrame(
@@ -261,9 +274,20 @@ class DeltaSilverIssueWriter:
         source: DataFrame,
     ) -> None:
         """Merge one already-normalized, unique Silver source DataFrame."""
-        self._require_utc_session()
-        self._require_required_columns(source)
-        self._require_unique_dataframe_business_keys(source)
+        require_utc_spark_session(
+            self._spark,
+            operation="writing Silver issues",
+        )
+        require_required_columns(
+            source,
+            required_columns=(field.name for field in self._ROW_SCHEMA),
+            source_name="Silver source",
+        )
+        require_unique_dataframe_keys(
+            source,
+            key_columns=("repository_owner", "repository_name", "issue_id"),
+            error_message="Silver source contains duplicate business keys before MERGE",
+        )
         self._merge_source(source)
 
     def _merge_source(
@@ -314,35 +338,6 @@ class DeltaSilverIssueWriter:
             .execute()
         )
 
-    def _require_required_columns(self, source: DataFrame) -> None:
-        """Reject DataFrames that cannot satisfy the Silver table contract."""
-        required_columns = {field.name for field in self._ROW_SCHEMA}
-        missing_columns = required_columns - set(source.columns)
-
-        if missing_columns:
-            raise ValueError(
-                f"Silver source is missing required columns: {sorted(missing_columns)}"
-            )
-
-    def _require_unique_dataframe_business_keys(self, source: DataFrame) -> None:
-        """Reject source DataFrames with more than one row per merge key."""
-        duplicate_keys = (
-            source.groupBy(
-                "repository_owner",
-                "repository_name",
-                "issue_id",
-            )
-            .count()
-            .where(F.col("count") > 1)
-            .limit(1)
-            .collect()
-        )
-
-        if duplicate_keys:
-            raise ValueError(
-                "Silver source contains duplicate business keys before MERGE"
-            )
-
     @staticmethod
     def _require_unique_business_keys(records: Sequence[SilverIssue]) -> None:
         """Reject batches that would match more than one source row per key."""
@@ -353,25 +348,6 @@ class DeltaSilverIssueWriter:
 
         if len(keys) != len(records):
             raise ValueError("records must have unique Silver business keys")
-
-    def _require_utc_session(self) -> None:
-        """Reject sessions that would interpret Delta timestamps differently."""
-        timezone = self._spark.conf.get("spark.sql.session.timeZone")
-
-        if timezone not in self._UTC_TIMEZONES:
-            raise RuntimeError(
-                "Spark session timezone must be UTC before writing Silver issues."
-            )
-
-    @staticmethod
-    def _quote_identifier(identifier: str) -> str:
-        """Quote every Unity Catalog identifier part and escape embedded backticks."""
-        parts = identifier.split(".")
-
-        if not all(parts):
-            raise ValueError(f"Invalid multipart identifier: {identifier!r}")
-
-        return ".".join(f"`{part.replace('`', '``')}`" for part in parts)
 
 
 class BronzeIssueToSilverTransformer:

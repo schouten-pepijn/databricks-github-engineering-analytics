@@ -17,6 +17,10 @@ from pyspark.sql.types import (
 )
 
 from github_engineering_analytics.common.config import PipelineConfig
+from github_engineering_analytics.common.delta_contracts import (
+    quote_multipart_identifier,
+    require_utc_spark_session,
+)
 from github_engineering_analytics.control.watermark import Watermark
 
 
@@ -26,8 +30,6 @@ class DeltaWatermarkRepository:
     The table grain is one row per ``(source_name, entity_name)``. A merge is
     monotonic: a stale retry cannot move a committed watermark backwards.
     """
-
-    _UTC_TIMEZONES: ClassVar[frozenset[str]] = frozenset({"UTC", "Etc/UTC"})
 
     _ROW_SCHEMA: ClassVar[StructType] = StructType(
         [
@@ -53,15 +55,19 @@ class DeltaWatermarkRepository:
 
     def ensure_table(self) -> None:
         """Create the control schema and Delta table when they are absent."""
-        self._require_utc_session()
+        require_utc_spark_session(
+            self._spark,
+            operation="reading or writing watermarks",
+        )
 
         self._spark.sql(
-            f"CREATE SCHEMA IF NOT EXISTS {self._quote_identifier(self._schema_name)}"
+            "CREATE SCHEMA IF NOT EXISTS "
+            f"{quote_multipart_identifier(self._schema_name)}"
         )
 
         self._spark.sql(
             "CREATE TABLE IF NOT EXISTS "
-            f"{self._quote_identifier(self._table_name)} ("
+            f"{quote_multipart_identifier(self._table_name)} ("
             "source_name STRING NOT NULL, "
             "entity_name STRING NOT NULL, "
             "watermark_column STRING NOT NULL, "
@@ -82,7 +88,10 @@ class DeltaWatermarkRepository:
         ``None`` means this source/entity has not been processed before.
         """
         self._validate_key(source_name, entity_name)
-        self._require_utc_session()
+        require_utc_spark_session(
+            self._spark,
+            operation="reading or writing watermarks",
+        )
 
         rows = (
             self._spark.table(self._table_name)
@@ -139,7 +148,10 @@ class DeltaWatermarkRepository:
         out-of-order completions unable to regress the stored position.
         """
         self._validate_key(source_name, entity_name)
-        self._require_utc_session()
+        require_utc_spark_session(
+            self._spark,
+            operation="reading or writing watermarks",
+        )
 
         if not watermark_column.strip():
             raise ValueError("watermark_column must not be empty")
@@ -203,16 +215,6 @@ class DeltaWatermarkRepository:
             .execute()
         )
 
-    def _require_utc_session(self) -> None:
-        """Reject sessions that would interpret Delta TIMESTAMP values differently."""
-        session_timezone = self._spark.conf.get("spark.sql.session.timeZone")
-
-        if session_timezone not in self._UTC_TIMEZONES:
-            raise RuntimeError(
-                "Spark session timezone must be UTC before reading "
-                "or writing watermarks."
-            )
-
     @staticmethod
     def _validate_key(
         source_name: str,
@@ -224,13 +226,3 @@ class DeltaWatermarkRepository:
 
         if not entity_name.strip():
             raise ValueError("entity_name must not be empty")
-
-    @staticmethod
-    def _quote_identifier(identifier: str) -> str:
-        """Quote every Unity Catalog identifier part and escape embedded backticks."""
-        parts = identifier.split(".")
-
-        if not all(parts):
-            raise ValueError(f"Invalid multipart identifier: {identifier!r}")
-
-        return ".".join(f"`{part.replace('`', '``')}`" for part in parts)

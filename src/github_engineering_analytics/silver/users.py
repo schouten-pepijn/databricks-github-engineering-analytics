@@ -19,6 +19,14 @@ from pyspark.sql.types import (
 )
 
 from github_engineering_analytics.common.config import PipelineConfig
+from github_engineering_analytics.common.delta_contracts import (
+    quote_multipart_identifier,
+    require_utc_spark_session,
+)
+from github_engineering_analytics.silver.contracts import (
+    require_required_columns,
+    require_unique_dataframe_keys,
+)
 
 
 @dataclass(frozen=True)
@@ -138,8 +146,6 @@ class SilverUser:
 class DeltaSilverUserWriter:
     """Persist the latest observed GitHub user state at Silver grain."""
 
-    _UTC_TIMEZONES: ClassVar[frozenset[str]] = frozenset({"UTC", "Etc/UTC"})
-
     _ROW_SCHEMA: ClassVar[StructType] = StructType(
         [
             StructField("user_id", LongType(), nullable=False),
@@ -163,14 +169,18 @@ class DeltaSilverUserWriter:
 
     def ensure_table(self) -> None:
         """Create the Silver schema and global GitHub users table when absent."""
-        self._require_utc_session()
+        require_utc_spark_session(
+            self._spark,
+            operation="writing Silver users",
+        )
 
         self._spark.sql(
-            f"CREATE SCHEMA IF NOT EXISTS {self._quote_identifier(self._schema_name)}"
+            "CREATE SCHEMA IF NOT EXISTS "
+            f"{quote_multipart_identifier(self._schema_name)}"
         )
         self._spark.sql(
             "CREATE TABLE IF NOT EXISTS "
-            f"{self._quote_identifier(self._table_name)} ("
+            f"{quote_multipart_identifier(self._table_name)} ("
             "user_id BIGINT NOT NULL, "
             "login STRING NOT NULL, "
             "user_type STRING NOT NULL, "
@@ -188,7 +198,10 @@ class DeltaSilverUserWriter:
         if not records:
             return
 
-        self._require_utc_session()
+        require_utc_spark_session(
+            self._spark,
+            operation="writing Silver users",
+        )
         self._require_unique_user_ids(records)
 
         source = self._spark.createDataFrame(
@@ -213,9 +226,20 @@ class DeltaSilverUserWriter:
         source: DataFrame,
     ) -> None:
         """Merge one normalized, unique Silver user source DataFrame."""
-        self._require_utc_session()
-        self._require_required_columns(source)
-        self._require_unique_dataframe_user_ids(source)
+        require_utc_spark_session(
+            self._spark,
+            operation="writing Silver users",
+        )
+        require_required_columns(
+            source,
+            required_columns=(field.name for field in self._ROW_SCHEMA),
+            source_name="Silver source",
+        )
+        require_unique_dataframe_keys(
+            source,
+            key_columns=("user_id",),
+            error_message="Silver source contains duplicate user IDs before MERGE",
+        )
         self._merge_source(source)
 
     def _merge_source(
@@ -254,30 +278,6 @@ class DeltaSilverUserWriter:
             .execute()
         )
 
-    def _require_required_columns(self, source: DataFrame) -> None:
-        """Reject DataFrames that cannot satisfy the Silver user table contract."""
-        required_columns = {field.name for field in self._ROW_SCHEMA}
-        missing_columns = required_columns - set(source.columns)
-
-        if missing_columns:
-            raise ValueError(
-                f"Silver source is missing required columns: {sorted(missing_columns)}"
-            )
-
-    @staticmethod
-    def _require_unique_dataframe_user_ids(source: DataFrame) -> None:
-        """Reject source DataFrames with multiple rows for one Delta MERGE key."""
-        duplicate_user_ids = (
-            source.groupBy("user_id")
-            .count()
-            .where(F.col("count") > 1)
-            .limit(1)
-            .collect()
-        )
-
-        if duplicate_user_ids:
-            raise ValueError("Silver source contains duplicate user IDs before MERGE")
-
     @staticmethod
     def _require_unique_user_ids(records: Sequence[SilverUser]) -> None:
         """Reject a batch that would supply multiple rows for one MERGE key."""
@@ -285,25 +285,6 @@ class DeltaSilverUserWriter:
 
         if len(user_ids) != len(records):
             raise ValueError("records must have unique Silver user IDs")
-
-    def _require_utc_session(self) -> None:
-        """Reject sessions that would interpret user observations ambiguously."""
-        timezone = self._spark.conf.get("spark.sql.session.timeZone")
-
-        if timezone not in self._UTC_TIMEZONES:
-            raise RuntimeError(
-                "Spark session timezone must be UTC before writing Silver users."
-            )
-
-    @staticmethod
-    def _quote_identifier(identifier: str) -> str:
-        """Quote each Unity Catalog identifier part."""
-        parts = identifier.split(".")
-
-        if not all(parts):
-            raise ValueError(f"Invalid multipart identifier: {identifier!r}")
-
-        return ".".join(f"`{part.replace('`', '``')}`" for part in parts)
 
 
 class BronzeIssueToSilverUserTransformer:

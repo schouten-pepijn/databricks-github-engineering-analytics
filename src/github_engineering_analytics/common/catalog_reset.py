@@ -12,6 +12,9 @@ from loguru import logger
 from pyspark.sql import SparkSession
 
 from github_engineering_analytics.common.config import PipelineConfig
+from github_engineering_analytics.common.delta_contracts import (
+    quote_multipart_identifier,
+)
 
 _TEST_CATALOG_ENVIRONMENT_VARIABLE = "DATABRICKS_TEST_CATALOG"
 _TEST_CONFIRMATION_ENVIRONMENT_VARIABLE = "CONFIRM_TEST_CATALOG_RESET"
@@ -59,7 +62,7 @@ def reset_catalog(
             )
             continue
 
-        spark.sql(f"TRUNCATE TABLE {_quote_identifier(table_name)}")
+        spark.sql(f"TRUNCATE TABLE {quote_multipart_identifier(table_name)}")
         truncated_tables.append(table_name)
         logger.bind(catalog=catalog, table_name=table_name).info(
             "Truncated table during catalog reset."
@@ -182,16 +185,6 @@ def _require_single_identifier(identifier: str, environment_variable: str) -> st
         raise ValueError(f"{environment_variable} must be one non-empty catalog name.")
 
     return identifier
-
-
-def _quote_identifier(identifier: str) -> str:
-    """Quote all multipart identifier parts for Spark SQL."""
-    parts = identifier.split(".")
-
-    if not all(parts):
-        raise ValueError(f"Invalid multipart identifier: {identifier!r}")
-
-    return ".".join(f"`{part.replace('`', '``')}`" for part in parts)
 
 
 if __name__ == "__main__":
