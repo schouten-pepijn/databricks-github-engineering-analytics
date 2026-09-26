@@ -319,3 +319,60 @@ class DeltaSilverLabelWriter:
             raise ValueError(f"Invalid multipart identifier: {identifier!r}")
 
         return ".".join(f"`{part.replace('`', '``')}`" for part in parts)
+
+
+class BronzeIssueToSilverLabelTransformer:
+    """Extract normalized label observations from Bronze issue payloads."""
+
+    _REQUIRED_BRONZE_COLUMNS: ClassVar[frozenset[str]] = frozenset(
+        {
+            "repository_owner",
+            "repository_name",
+            "issue_id",
+            "source_updated_at",
+            "raw_json",
+            "_run_id",
+            "_ingested_at",
+            "_page_or_batch_reference",
+        }
+    )
+
+    _GITHUB_ISSUE_LABEL_SCHEMA: ClassVar[StructType] = StructType(
+        [
+            StructField("id", LongType(), nullable=True),
+            StructField(
+                "labels",
+                ArrayType(
+                    StructType(
+                        [
+                            StructField("id", LongType(), nullable=True),
+                            StructField("name", StringType(), nullable=True),
+                            StructField("color", StringType(), nullable=True),
+                            StructField("description", StringType(), nullable=True),
+                            StructField("default", BooleanType(), nullable=True),
+                        ]
+                    ),
+                    containsNull=True,
+                ),
+                nullable=True,
+            ),
+        ]
+    )
+
+    def transform(
+        self,
+        bronze: DataFrame,
+    ) -> DataFrame:
+        """Validate the Bronze contract before parsing nested label JSON."""
+        self._require_required_columns(bronze)
+
+        raise NotImplementedError()
+
+    def _require_required_columns(self, bronze: DataFrame) -> None:
+        """Reject incomplete Bronze input before any Spark JSON operation."""
+        missing_columns = self._REQUIRED_BRONZE_COLUMNS - set(bronze.columns)
+
+        if missing_columns:
+            raise ValueError(
+                f"Bronze source is missing required columns: {sorted(missing_columns)}"
+            )
