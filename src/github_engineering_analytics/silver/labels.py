@@ -4,12 +4,15 @@ from __future__ import annotations
 
 import json
 import string
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import ClassVar, Self
 
-from pyspark.sql import SparkSession
+from delta.tables import DeltaTable
+from pyspark.sql import DataFrame, SparkSession
 from pyspark.sql.types import (
+    ArrayType,
     BooleanType,
     LongType,
     StringType,
