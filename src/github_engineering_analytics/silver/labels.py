@@ -72,7 +72,7 @@ class SilverLabel:
             raise ValueError("payload['labels'] must be a JSON array")
 
         observed_at = source_updated_at.astimezone(UTC)
-        labels: list[SilverLabel] = []
+        labels: list[Self] = []
         label_ids: set[int] = set()
 
         for label_payload in label_payloads:
