@@ -32,6 +32,24 @@ _BRONZE_LABEL_TEST_SCHEMA = StructType(
 )
 
 
+def _bronze_label_row(
+    *,
+    raw_json: str,
+    source_issue_id: int = 1001,
+) -> tuple[str, str, int, datetime, str, str, datetime, str]:
+    """Build one valid Bronze envelope around a supplied Issue JSON payload."""
+    return (
+        "psf",
+        "requests",
+        source_issue_id,
+        datetime(2026, 9, 20, 10, 0, tzinfo=UTC),
+        raw_json,
+        "run-invalid",
+        datetime(2026, 9, 20, 10, 1, tzinfo=UTC),
+        "batch-1",
+    )
+
+
 def test_transform_selects_latest_observation_per_repository_label(
     integration_spark: SparkSession,
 ) -> None:
