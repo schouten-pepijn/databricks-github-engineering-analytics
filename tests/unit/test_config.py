@@ -15,3 +15,5 @@ def test_pipeline_config_builds_table_names():
     assert config.pipeline_runs_table == "main.github_analytics_control.pipeline_runs"
 
     assert config.silver_users_table == "main.github_analytics_silver.github_users"
+
+    assert config.silver_labels_table == "main.github_analytics_silver.github_labels"

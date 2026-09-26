@@ -37,3 +37,8 @@ class PipelineConfig:
     def silver_users_table(self) -> str:
         """Return the Silver table containing normalized GitHub users."""
         return f"{self.catalog}.{self.silver_schema}.github_users"
+
+    @property
+    def silver_labels_table(self) -> str:
+        """Return the Silver table containing normalized GitHub labels."""
+        return f"{self.catalog}.{self.silver_schema}.github_labels"
