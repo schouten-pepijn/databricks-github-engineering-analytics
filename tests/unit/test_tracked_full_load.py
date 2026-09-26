@@ -75,7 +75,10 @@ def test_run_tracked_full_load_records_silver_failure_and_reraises(
     assert failed_run.error_message == "Silver merge failed"
 
 
-def test_run_tracked_full_load_records_a_successful_lifecycle(mocker) -> None:
+def test_run_tracked_full_load_records_a_successful_lifecycle(
+    mocker,
+    no_watermark_repository: Mock,
+) -> None:
     spark = Mock()
     repository = Mock()
     result = BronzeIngestionResult(
@@ -161,7 +164,10 @@ def test_run_tracked_full_load_records_a_successful_lifecycle(mocker) -> None:
     ]
 
 
-def test_run_tracked_full_load_records_failure_and_reraises(mocker) -> None:
+def test_run_tracked_full_load_records_failure_and_reraises(
+    mocker,
+    no_watermark_repository: Mock,
+) -> None:
     spark = Mock()
     repository = Mock()
     started_at = datetime(2026, 9, 20, 12, 0, tzinfo=UTC)
@@ -195,6 +201,7 @@ def test_run_tracked_full_load_records_failure_and_reraises(mocker) -> None:
 
 def test_run_tracked_full_load_records_no_candidate_for_empty_extraction(
     mocker,
+    no_watermark_repository: Mock,
 ) -> None:
     spark = Mock()
     repository = Mock()
