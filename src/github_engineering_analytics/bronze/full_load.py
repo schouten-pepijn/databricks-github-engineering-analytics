@@ -161,6 +161,20 @@ def resolve_github_token(
     return token
 
 
+def _create_bronze_ingestion(
+    *,
+    spark: SparkSession,
+    catalog: str,
+    github_token: str | None,
+) -> GitHubIssueBronzeIngestion:
+    """Create the GitHub and Delta adapters shared by Bronze load modes."""
+    config = PipelineConfig(catalog=catalog)
+    client = GitHubClient(token=github_token)
+    writer = DeltaBronzeIssueWriter(spark=spark, config=config)
+
+    return GitHubIssueBronzeIngestion(client=client, writer=writer)
+
+
 def run_full_load(
     *,
     spark: SparkSession,
