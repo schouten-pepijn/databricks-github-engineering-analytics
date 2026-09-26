@@ -41,6 +41,17 @@ def make_user(
     )
 
 
+def make_dataframe_source() -> Mock:
+    """Build a mocked DataFrame satisfying the Silver user writer contract."""
+    source = Mock()
+    source.columns = [field.name for field in DeltaSilverUserWriter._ROW_SCHEMA]
+    (
+        source.groupBy.return_value.count.return_value.where.return_value.limit.return_value.collect.return_value
+    ) = []
+
+    return source
+
+
 def test_ensure_table_creates_silver_schema_and_user_table() -> None:
     spark, writer = make_writer()
 
@@ -161,3 +172,71 @@ def test_upsert_rejects_non_utc_spark_session() -> None:
         writer.upsert([make_user()])
 
     spark.createDataFrame.assert_not_called()
+
+
+@patch("github_engineering_analytics.silver.users.DeltaTable")
+def test_upsert_dataframe_rejects_missing_required_columns_before_writing(
+    delta_table: Mock,
+) -> None:
+    spark, writer = make_writer()
+    source = make_dataframe_source()
+    source.columns.remove("observed_at")
+
+    with pytest.raises(
+        ValueError,
+        match=r"missing required columns: \['observed_at'\]",
+    ):
+        writer.upsert_dataframe(source)
+
+    source.groupBy.assert_not_called()
+    delta_table.forName.assert_not_called()
+
+
+@patch("github_engineering_analytics.silver.users.DeltaTable")
+def test_upsert_dataframe_rejects_duplicate_user_ids_before_merging(
+    delta_table: Mock,
+) -> None:
+    spark, writer = make_writer()
+    source = make_dataframe_source()
+    (
+        source.groupBy.return_value.count.return_value.where.return_value.limit.return_value.collect.return_value
+    ) = [Mock()]
+
+    with pytest.raises(ValueError, match="duplicate user IDs"):
+        writer.upsert_dataframe(source)
+
+    source.groupBy.assert_called_once_with("user_id")
+    delta_table.forName.assert_not_called()
+
+
+@patch("github_engineering_analytics.silver.users.DeltaTable")
+def test_upsert_dataframe_merges_a_validated_source(
+    delta_table: Mock,
+) -> None:
+    spark, writer = make_writer()
+    source = make_dataframe_source()
+    source_alias = Mock()
+    source.alias.return_value = source_alias
+
+    target = Mock()
+    target_alias = Mock()
+    target.alias.return_value = target_alias
+    delta_table.forName.return_value = target
+
+    merge_builder = Mock()
+    target_alias.merge.return_value = merge_builder
+    update_builder = Mock()
+    merge_builder.whenMatchedUpdate.return_value = update_builder
+    insert_builder = Mock()
+    update_builder.whenNotMatchedInsert.return_value = insert_builder
+
+    writer.upsert_dataframe(source)
+
+    target_alias.merge.assert_called_once_with(
+        source_alias,
+        "target.user_id = source.user_id",
+    )
+    assert merge_builder.whenMatchedUpdate.call_args.kwargs["condition"] == (
+        "source.observed_at >= target.observed_at"
+    )
+    insert_builder.execute.assert_called_once()

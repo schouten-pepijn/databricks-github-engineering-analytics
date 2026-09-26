@@ -201,7 +201,25 @@ class DeltaSilverUserWriter:
             schema=self._ROW_SCHEMA,
         )
 
+        self._merge_source(source)
+
+    def upsert_dataframe(
+        self,
+        source: DataFrame,
+    ) -> None:
+        """Merge one normalized, unique Silver user source DataFrame."""
+        self._require_utc_session()
+        self._require_required_columns(source)
+        self._require_unique_dataframe_user_ids(source)
+        self._merge_source(source)
+
+    def _merge_source(
+        self,
+        source: DataFrame,
+    ) -> None:
+        """Merge a validated source DataFrame into the current-state user table."""
         target = DeltaTable.forName(self._spark, self._table_name)
+
         (
             target.alias("target")
             .merge(
@@ -230,6 +248,30 @@ class DeltaSilverUserWriter:
             )
             .execute()
         )
+
+    def _require_required_columns(self, source: DataFrame) -> None:
+        """Reject DataFrames that cannot satisfy the Silver user table contract."""
+        required_columns = {field.name for field in self._ROW_SCHEMA}
+        missing_columns = required_columns - set(source.columns)
+
+        if missing_columns:
+            raise ValueError(
+                f"Silver source is missing required columns: {sorted(missing_columns)}"
+            )
+
+    @staticmethod
+    def _require_unique_dataframe_user_ids(source: DataFrame) -> None:
+        """Reject source DataFrames with multiple rows for one Delta MERGE key."""
+        duplicate_user_ids = (
+            source.groupBy("user_id")
+            .count()
+            .where(F.col("count") > 1)
+            .limit(1)
+            .collect()
+        )
+
+        if duplicate_user_ids:
+            raise ValueError("Silver source contains duplicate user IDs before MERGE")
 
     @staticmethod
     def _require_unique_user_ids(records: Sequence[SilverUser]) -> None:
