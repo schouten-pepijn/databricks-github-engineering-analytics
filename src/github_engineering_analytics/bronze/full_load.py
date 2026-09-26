@@ -213,26 +213,44 @@ def run_tracked_full_load(
         config=config,
     )
     pipeline_runs.ensure_table()
+    watermarks = DeltaWatermarkRepository(
+        spark=spark,
+        config=config,
+    )
+    watermarks.ensure_table()
+    watermark_before = watermarks.get("github", "issues")
 
     started_run = PipelineRun(
         run_id=run_id_factory().hex,
         source_name="github",
         entity_name="issues",
         started_at=clock(),
-        watermark_before=None,
+        watermark_before=watermark_before,
     )
     pipeline_runs.record_started(started_run)
 
     try:
-        result = run_full_load(
-            spark=spark,
-            catalog=catalog,
-            owner=owner,
-            repository=repository,
-            github_token=github_token,
-            run_id=started_run.run_id,
-            ingested_at=started_run.started_at,
-        )
+        if watermark_before is None:
+            result = run_full_load(
+                spark=spark,
+                catalog=catalog,
+                owner=owner,
+                repository=repository,
+                github_token=github_token,
+                run_id=started_run.run_id,
+                ingested_at=started_run.started_at,
+            )
+        else:
+            result = run_incremental_load(
+                spark=spark,
+                catalog=catalog,
+                owner=owner,
+                repository=repository,
+                github_token=github_token,
+                run_id=started_run.run_id,
+                ingested_at=started_run.started_at,
+                watermark=watermark_before,
+            )
 
         run_bronze_to_silver(
             spark=spark,
