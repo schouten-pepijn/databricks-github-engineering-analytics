@@ -6,7 +6,19 @@ import json
 import string
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Self
+from typing import ClassVar, Self
+
+from pyspark.sql import SparkSession
+from pyspark.sql.types import (
+    BooleanType,
+    LongType,
+    StringType,
+    StructField,
+    StructType,
+    TimestampType,
+)
+
+from github_engineering_analytics.common.config import PipelineConfig
 
 
 @dataclass(frozen=True)
