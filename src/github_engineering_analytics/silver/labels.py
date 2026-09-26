@@ -20,6 +20,7 @@ from pyspark.sql.types import (
     StructType,
     TimestampType,
 )
+from pyspark.sql.window import Window
 
 from github_engineering_analytics.common.config import PipelineConfig
 
@@ -460,16 +461,36 @@ class BronzeIssueToSilverLabelTransformer:
             ),
         )
 
-        flattened_rows = parsed_rows.select(
+        issue_rows = parsed_rows.select(
             F.col("repository_owner"),
             F.col("repository_name"),
             F.col("issue_id").alias("source_issue_id"),
             F.col("source_updated_at").alias("observed_at"),
             F.col("_run_id").alias("source_run_id"),
-            F.explode(F.col("_payload.labels")).alias("_label"),
+            F.col("_ingested_at"),
+            F.col("_page_or_batch_reference"),
+            F.col("raw_json"),
+            F.col("_payload.id").alias("_payload_issue_id"),
+            F.col("_payload.labels").alias("_labels"),
         )
 
-        return flattened_rows.select(
+        # Validate the Issue envelope before explode could turn a malformed
+        # labels field into zero output rows.
+        self._require_valid_issue_rows(issue_rows)
+
+        flattened_rows = issue_rows.select(
+            F.col("repository_owner"),
+            F.col("repository_name"),
+            F.col("source_issue_id"),
+            F.col("observed_at"),
+            F.col("source_run_id"),
+            F.col("_ingested_at"),
+            F.col("_page_or_batch_reference"),
+            F.col("raw_json"),
+            F.explode(F.col("_labels")).alias("_label"),
+        )
+
+        normalized_rows = flattened_rows.select(
             F.col("repository_owner"),
             F.col("repository_name"),
             F.col("_label.id").alias("label_id"),
@@ -480,7 +501,102 @@ class BronzeIssueToSilverLabelTransformer:
             F.col("source_issue_id"),
             F.col("observed_at"),
             F.col("source_run_id"),
+            F.col("_ingested_at"),
+            F.col("_page_or_batch_reference"),
+            F.col("raw_json"),
         )
+
+        self._require_valid_normalized_rows(normalized_rows)
+
+        latest_window = Window.partitionBy(
+            "repository_owner",
+            "repository_name",
+            "label_id",
+        ).orderBy(
+            F.col("observed_at").desc(),
+            F.col("_ingested_at").desc(),
+            F.col("source_run_id").desc(),
+            F.col("_page_or_batch_reference").desc(),
+            F.col("raw_json").desc(),
+        )
+
+        return (
+            normalized_rows.withColumn(
+                "_row_number",
+                F.row_number().over(latest_window),
+            )
+            .where(F.col("_row_number") == 1)
+            .select(
+                "repository_owner",
+                "repository_name",
+                "label_id",
+                "name",
+                "color",
+                "description",
+                "is_default",
+                "source_issue_id",
+                "observed_at",
+                "source_run_id",
+            )
+        )
+
+    @staticmethod
+    def _require_valid_issue_rows(rows: DataFrame) -> None:
+        """Fail before explode when Bronze Issue envelopes are invalid."""
+        label_ids = F.transform(
+            F.col("_labels"),
+            lambda label: label.getField("id"),
+        )
+        invalid_rows = rows.where(
+            F.col("repository_owner").isNull()
+            | (F.length(F.trim(F.col("repository_owner"))) == 0)
+            | F.col("repository_name").isNull()
+            | (F.length(F.trim(F.col("repository_name"))) == 0)
+            | F.col("source_issue_id").isNull()
+            | (F.col("source_issue_id") <= 0)
+            | F.col("_payload_issue_id").isNull()
+            | (F.col("_payload_issue_id") <= 0)
+            | (F.col("_payload_issue_id") != F.col("source_issue_id"))
+            | F.col("_labels").isNull()
+            | (F.size(F.col("_labels")) != F.size(F.array_distinct(label_ids)))
+            | F.col("observed_at").isNull()
+            | F.col("source_run_id").isNull()
+            | (F.length(F.trim(F.col("source_run_id"))) == 0)
+            | F.col("_ingested_at").isNull()
+        )
+
+        if invalid_rows.limit(1).count():
+            raise ValueError(
+                "Bronze source contains rows that cannot form valid Silver labels"
+            )
+
+    @staticmethod
+    def _require_valid_normalized_rows(rows: DataFrame) -> None:
+        """Fail before reduction when Bronze rows cannot form valid Silver labels."""
+        invalid_rows = rows.where(
+            F.col("repository_owner").isNull()
+            | (F.length(F.trim(F.col("repository_owner"))) == 0)
+            | F.col("repository_name").isNull()
+            | (F.length(F.trim(F.col("repository_name"))) == 0)
+            | F.col("label_id").isNull()
+            | (F.col("label_id") <= 0)
+            | F.col("name").isNull()
+            | (F.length(F.trim(F.col("name"))) == 0)
+            | F.col("color").isNull()
+            | ~F.col("color").rlike(r"^[0-9a-f]{6}$")
+            | F.col("is_default").isNull()
+            | F.col("source_issue_id").isNull()
+            | (F.col("source_issue_id") <= 0)
+            | F.col("observed_at").isNull()
+            | F.col("source_run_id").isNull()
+            | (F.length(F.trim(F.col("source_run_id"))) == 0)
+            | F.col("_ingested_at").isNull()
+        )
+
+        if invalid_rows.limit(1).count():
+            raise ValueError(
+                "Bronze source contains rows that cannot form valid Silver labels"
+            )
 
     def _require_required_columns(self, bronze: DataFrame) -> None:
         """Reject incomplete Bronze input before any Spark JSON operation."""
