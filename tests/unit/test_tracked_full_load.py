@@ -230,3 +230,76 @@ def test_run_tracked_full_load_records_no_candidate_for_empty_extraction(
 
     assert finished_run.status is PipelineRunStatus.SUCCEEDED
     assert finished_run.candidate_watermark is None
+
+
+def test_run_tracked_full_load_uses_incremental_load_when_watermark_exists(
+    mocker,
+) -> None:
+    spark = Mock()
+    pipeline_run_repository = Mock()
+    watermark_repository = Mock()
+    started_at = datetime(2026, 9, 20, 12, 0, tzinfo=UTC)
+    finished_at = datetime(2026, 9, 20, 12, 5, tzinfo=UTC)
+    expected_run_id = "12345678123456781234567812345678"
+
+    stored_watermark = Watermark(
+        value=datetime(2026, 9, 20, 11, 55, tzinfo=UTC),
+        overlap_seconds=300,
+    )
+    result = BronzeIngestionResult(
+        records_extracted=3,
+        batches_written=1,
+        candidate_watermark=Watermark(
+            value=datetime(2026, 9, 20, 12, 3, tzinfo=UTC),
+            overlap_seconds=300,
+        ),
+    )
+
+    mocker.patch(
+        "github_engineering_analytics.bronze.full_load.DeltaPipelineRunRepository",
+        return_value=pipeline_run_repository,
+    )
+    mocker.patch(
+        "github_engineering_analytics.bronze.full_load.DeltaWatermarkRepository",
+        return_value=watermark_repository,
+        create=True,
+    )
+    watermark_repository.get.return_value = stored_watermark
+
+    full_load = mocker.patch(
+        "github_engineering_analytics.bronze.full_load.run_full_load",
+    )
+    incremental_load = mocker.patch(
+        "github_engineering_analytics.bronze.full_load.run_incremental_load",
+        return_value=result,
+        create=True,
+    )
+    mocker.patch(
+        "github_engineering_analytics.bronze.full_load.run_bronze_to_silver",
+    )
+
+    run_tracked_full_load(
+        spark=spark,
+        catalog="test_catalog",
+        owner="psf",
+        repository="requests",
+        github_token="test-token",
+        run_id_factory=lambda: UUID("12345678-1234-5678-1234-567812345678"),
+        clock=Mock(side_effect=[started_at, finished_at]),
+    )
+
+    watermark_repository.get.assert_called_once_with("github", "issues")
+    full_load.assert_not_called()
+    incremental_load.assert_called_once_with(
+        spark=spark,
+        catalog="test_catalog",
+        owner="psf",
+        repository="requests",
+        github_token="test-token",
+        run_id=expected_run_id,
+        ingested_at=started_at,
+        watermark=stored_watermark,
+    )
+
+    started_run = pipeline_run_repository.record_started.call_args.args[0]
+    assert started_run.watermark_before == stored_watermark
