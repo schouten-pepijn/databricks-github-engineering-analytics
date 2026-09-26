@@ -33,11 +33,11 @@ def test_run_bronze_to_silver_processes_all_bronze_history_when_unscoped(
     transformer.transform.return_value = transformed
 
     transformer_constructor = mocker.patch(
-        "github_engineering_analytics.silver.full_load.BronzeIssueToSilverTransformer",
+        "github_engineering_analytics.silver.issues_full_load.BronzeIssueToSilverTransformer",
         return_value=transformer,
     )
     writer_constructor = mocker.patch(
-        "github_engineering_analytics.silver.full_load.DeltaSilverIssueWriter",
+        "github_engineering_analytics.silver.issues_full_load.DeltaSilverIssueWriter",
         return_value=writer,
     )
 
@@ -72,7 +72,7 @@ def test_run_bronze_to_silver_filters_on_the_bronze_run_id(
     transformed = Mock()
     transformer = Mock()
     writer = Mock()
-    functions = mocker.patch("github_engineering_analytics.silver.full_load.F")
+    functions = mocker.patch("github_engineering_analytics.silver.issues_full_load.F")
     run_id_column = MagicMock()
     filter_condition = Mock()
     run_id_column.__eq__.return_value = filter_condition
@@ -82,11 +82,11 @@ def test_run_bronze_to_silver_filters_on_the_bronze_run_id(
     transformer.transform.return_value = transformed
 
     mocker.patch(
-        "github_engineering_analytics.silver.full_load.BronzeIssueToSilverTransformer",
+        "github_engineering_analytics.silver.issues_full_load.BronzeIssueToSilverTransformer",
         return_value=transformer,
     )
     mocker.patch(
-        "github_engineering_analytics.silver.full_load.DeltaSilverIssueWriter",
+        "github_engineering_analytics.silver.issues_full_load.DeltaSilverIssueWriter",
         return_value=writer,
     )
 
