@@ -3,7 +3,7 @@ from unittest.mock import MagicMock, Mock
 import pytest
 
 from github_engineering_analytics.common.config import PipelineConfig
-from github_engineering_analytics.silver.full_load import run_bronze_to_silver
+from github_engineering_analytics.silver.issues_full_load import run_bronze_to_silver
 
 
 def test_run_bronze_to_silver_rejects_blank_run_id_before_reading_bronze() -> None:

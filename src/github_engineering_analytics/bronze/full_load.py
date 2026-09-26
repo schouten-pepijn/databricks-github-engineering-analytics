@@ -28,7 +28,7 @@ from github_engineering_analytics.control.watermark import Watermark
 from github_engineering_analytics.control.watermark_repository import (
     DeltaWatermarkRepository,
 )
-from github_engineering_analytics.silver.full_load import run_bronze_to_silver
+from github_engineering_analytics.silver.issues_full_load import run_bronze_to_silver
 from github_engineering_analytics.silver.labels_full_load import (
     run_bronze_to_silver_labels,
 )

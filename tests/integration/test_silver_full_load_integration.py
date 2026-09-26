@@ -14,7 +14,7 @@ from github_engineering_analytics.bronze.issues import (
     DeltaBronzeIssueWriter,
 )
 from github_engineering_analytics.common.config import PipelineConfig
-from github_engineering_analytics.silver.full_load import run_bronze_to_silver
+from github_engineering_analytics.silver.issues_full_load import run_bronze_to_silver
 
 pytestmark = pytest.mark.integration
 
