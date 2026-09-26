@@ -229,6 +229,19 @@ def test_upsert_dataframe_rejects_missing_required_columns_before_writing(
     delta_table.forName.assert_not_called()
 
 
+def test_upsert_dataframe_rejects_non_utc_spark_session(mocker) -> None:
+    """Fail before inspecting the DataFrame when Spark is not configured for UTC."""
+    delta_table = mocker.patch("github_engineering_analytics.silver.labels.DeltaTable")
+    _, writer = make_writer(session_timezone="Europe/Amsterdam")
+    source = make_dataframe_source()
+
+    with pytest.raises(RuntimeError, match="Spark session timezone must be UTC"):
+        writer.upsert_dataframe(source)
+
+    source.groupBy.assert_not_called()
+    delta_table.forName.assert_not_called()
+
+
 def test_upsert_dataframe_rejects_duplicate_business_keys_before_merging(
     mocker,
 ) -> None:
@@ -251,3 +264,46 @@ def test_upsert_dataframe_rejects_duplicate_business_keys_before_merging(
         "label_id",
     )
     delta_table.forName.assert_not_called()
+
+
+def test_upsert_dataframe_merges_a_validated_source(mocker) -> None:
+    """Merge a validated Label DataFrame through the shared Delta contract."""
+    delta_table = mocker.patch(
+        "github_engineering_analytics.silver.labels.DeltaTable",
+    )
+    spark, writer = make_writer()
+    source = make_dataframe_source()
+
+    source_alias = Mock()
+    source.alias.return_value = source_alias
+
+    target = Mock()
+    target_alias = Mock()
+    target.alias.return_value = target_alias
+    delta_table.forName.return_value = target
+
+    merge_builder = Mock()
+    target_alias.merge.return_value = merge_builder
+    update_builder = Mock()
+    merge_builder.whenMatchedUpdate.return_value = update_builder
+    insert_builder = Mock()
+    update_builder.whenNotMatchedInsert.return_value = insert_builder
+
+    writer.upsert_dataframe(source)
+
+    source.groupBy.assert_called_once_with(
+        "repository_owner",
+        "repository_name",
+        "label_id",
+    )
+    spark.createDataFrame.assert_not_called()
+    target_alias.merge.assert_called_once_with(
+        source_alias,
+        "target.repository_owner = source.repository_owner "
+        "AND target.repository_name = source.repository_name "
+        "AND target.label_id = source.label_id",
+    )
+    assert merge_builder.whenMatchedUpdate.call_args.kwargs["condition"] == (
+        "source.observed_at >= target.observed_at"
+    )
+    insert_builder.execute.assert_called_once()
