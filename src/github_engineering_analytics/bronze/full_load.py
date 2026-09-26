@@ -191,6 +191,33 @@ def run_full_load(
     )
 
 
+def run_incremental_load(
+    *,
+    spark: SparkSession,
+    catalog: str,
+    owner: str,
+    repository: str,
+    github_token: str | None = None,
+    run_id: str,
+    ingested_at: datetime,
+    watermark: Watermark,
+) -> BronzeIngestionResult:
+    """Run one overlap-aware GitHub Issues extraction into Bronze."""
+    ingestion = _create_bronze_ingestion(
+        spark=spark,
+        catalog=catalog,
+        github_token=github_token,
+    )
+
+    return ingestion.incremental_load(
+        owner=owner,
+        repository=repository,
+        run_id=run_id,
+        ingested_at=ingested_at,
+        watermark=watermark,
+    )
+
+
 def run_tracked_full_load(
     *,
     spark: SparkSession,
