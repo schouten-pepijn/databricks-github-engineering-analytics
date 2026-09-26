@@ -73,6 +73,7 @@ def test_tracked_full_load_persists_bronze_silver_and_successful_run(
     run_uuid = uuid4()
     run_id = run_uuid.hex
     repository_name = f"tracked-full-load-{run_id}"
+    user_id = 1_000_000_000 + (run_uuid.int % 1_000_000_000)
 
     client = Mock()
     client.iter_issues.return_value = iter(
@@ -85,6 +86,11 @@ def test_tracked_full_load_persists_bronze_silver_and_successful_run(
                 "created_at": "2026-09-20T12:00:00Z",
                 "updated_at": "2026-09-20T12:03:00Z",
                 "closed_at": None,
+                "user": {
+                    "id": user_id,
+                    "login": f"tracked-user-{run_id}",
+                    "type": "User",
+                },
             }
         ]
     )
@@ -137,6 +143,13 @@ def test_tracked_full_load_persists_bronze_silver_and_successful_run(
             .limit(2)
             .collect()
         )
+        silver_user_rows = (
+            integration_spark.table(config.silver_users_table)
+            .where(F.col("user_id") == user_id)
+            .select("login", "user_type", "source_issue_id", "source_run_id")
+            .limit(2)
+            .collect()
+        )
         pipeline_run_rows = (
             integration_spark.table(config.pipeline_runs_table)
             .where(F.col("run_id") == run_id)
@@ -168,6 +181,14 @@ def test_tracked_full_load_persists_bronze_silver_and_successful_run(
             "state": "open",
             "source_run_id": run_id,
         }
+        assert [row.asDict() for row in silver_user_rows] == [
+            {
+                "login": f"tracked-user-{run_id}",
+                "user_type": "User",
+                "source_issue_id": 123,
+                "source_run_id": run_id,
+            }
+        ]
         assert len(pipeline_run_rows) == 1
         assert pipeline_run_rows[0].asDict() == {
             "source_name": "github",
@@ -189,6 +210,9 @@ def test_tracked_full_load_persists_bronze_silver_and_successful_run(
                 "AND issue_id = 123"
             )
         )
+        DeltaTable.forName(integration_spark, config.silver_users_table).delete(
+            condition=f"user_id = {user_id}"
+        )
         DeltaTable.forName(integration_spark, config.pipeline_runs_table).delete(
             condition=f"run_id = '{run_id}'"
         )
@@ -202,9 +226,11 @@ def test_tracked_full_load_uses_stored_watermark_for_incremental_bronze_load(
     """Persist an overlap-aware incremental Bronze-to-Silver lifecycle."""
     catalog = os.environ["DATABRICKS_TEST_CATALOG"]
     config = PipelineConfig(catalog=catalog)
-    run_id = uuid4().hex
+    run_uuid = uuid4()
+    run_id = run_uuid.hex
     repository_name = f"tracked-incremental-load-{run_id}"
     issue_id = 456
+    user_id = 1_000_000_000 + (run_uuid.int % 1_000_000_000)
     started_at = datetime(2026, 9, 20, 12, 0, tzinfo=UTC)
     finished_at = datetime(2026, 9, 20, 12, 5, tzinfo=UTC)
     stored_watermark = Watermark(
@@ -227,6 +253,11 @@ def test_tracked_full_load_uses_stored_watermark_for_incremental_bronze_load(
                 "created_at": "2026-09-20T12:00:00Z",
                 "updated_at": "2026-09-20T12:03:00Z",
                 "closed_at": None,
+                "user": {
+                    "id": user_id,
+                    "login": f"incremental-user-{run_id}",
+                    "type": "User",
+                },
             }
         ]
     )
@@ -289,6 +320,13 @@ def test_tracked_full_load_uses_stored_watermark_for_incremental_bronze_load(
             .limit(2)
             .collect()
         )
+        silver_user_rows = (
+            integration_spark.table(config.silver_users_table)
+            .where(F.col("user_id") == user_id)
+            .select("login", "user_type", "source_issue_id", "source_run_id")
+            .limit(2)
+            .collect()
+        )
         pipeline_run_rows = (
             integration_spark.table(config.pipeline_runs_table)
             .where(F.col("run_id") == run_id)
@@ -316,6 +354,14 @@ def test_tracked_full_load_uses_stored_watermark_for_incremental_bronze_load(
             }
         ]
         assert [row.asDict() for row in silver_rows] == [{"source_run_id": run_id}]
+        assert [row.asDict() for row in silver_user_rows] == [
+            {
+                "login": f"incremental-user-{run_id}",
+                "user_type": "User",
+                "source_issue_id": issue_id,
+                "source_run_id": run_id,
+            }
+        ]
         assert [row.asDict() for row in pipeline_run_rows] == [
             {
                 "status": "succeeded",
@@ -335,6 +381,9 @@ def test_tracked_full_load_uses_stored_watermark_for_incremental_bronze_load(
                 f"AND repository_name = '{repository_name}' "
                 f"AND issue_id = {issue_id}"
             )
+        )
+        DeltaTable.forName(integration_spark, config.silver_users_table).delete(
+            condition=f"user_id = {user_id}"
         )
         DeltaTable.forName(integration_spark, config.pipeline_runs_table).delete(
             condition=f"run_id = '{run_id}'"
