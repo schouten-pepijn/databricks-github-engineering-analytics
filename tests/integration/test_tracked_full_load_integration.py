@@ -74,6 +74,7 @@ def test_tracked_full_load_persists_bronze_silver_and_successful_run(
     run_id = run_uuid.hex
     repository_name = f"tracked-full-load-{run_id}"
     user_id = 1_000_000_000 + (run_uuid.int % 1_000_000_000)
+    label_id = 9_000_000_000_000 + (run_uuid.int % 1_000_000_000)
 
     client = Mock()
     client.iter_issues.return_value = iter(
@@ -91,6 +92,17 @@ def test_tracked_full_load_persists_bronze_silver_and_successful_run(
                     "login": f"tracked-user-{run_id}",
                     "type": "User",
                 },
+                "labels": [
+                    {
+                        "id": label_id,
+                        "name": "tracked-label",
+                        "color": "A1B2C3",
+                        "description": (
+                            "Created by the tracked full-load integration test."
+                        ),
+                        "default": False,
+                    }
+                ],
             }
         ]
     )
@@ -150,6 +162,24 @@ def test_tracked_full_load_persists_bronze_silver_and_successful_run(
             .limit(2)
             .collect()
         )
+        silver_label_rows = (
+            integration_spark.table(config.silver_labels_table)
+            .where(
+                (F.col("repository_owner") == "pytest")
+                & (F.col("repository_name") == repository_name)
+                & (F.col("label_id") == label_id)
+            )
+            .select(
+                "name",
+                "color",
+                "description",
+                "is_default",
+                "source_issue_id",
+                "source_run_id",
+            )
+            .limit(2)
+            .collect()
+        )
         pipeline_run_rows = (
             integration_spark.table(config.pipeline_runs_table)
             .where(F.col("run_id") == run_id)
@@ -189,6 +219,16 @@ def test_tracked_full_load_persists_bronze_silver_and_successful_run(
                 "source_run_id": run_id,
             }
         ]
+        assert [row.asDict() for row in silver_label_rows] == [
+            {
+                "name": "tracked-label",
+                "color": "a1b2c3",
+                "description": "Created by the tracked full-load integration test.",
+                "is_default": False,
+                "source_issue_id": 123,
+                "source_run_id": run_id,
+            }
+        ]
         assert len(pipeline_run_rows) == 1
         assert pipeline_run_rows[0].asDict() == {
             "source_name": "github",
@@ -213,6 +253,13 @@ def test_tracked_full_load_persists_bronze_silver_and_successful_run(
         DeltaTable.forName(integration_spark, config.silver_users_table).delete(
             condition=f"user_id = {user_id}"
         )
+        DeltaTable.forName(integration_spark, config.silver_labels_table).delete(
+            condition=(
+                "repository_owner = 'pytest' "
+                f"AND repository_name = '{repository_name}' "
+                f"AND label_id = {label_id}"
+            )
+        )
         DeltaTable.forName(integration_spark, config.pipeline_runs_table).delete(
             condition=f"run_id = '{run_id}'"
         )
@@ -231,6 +278,7 @@ def test_tracked_full_load_uses_stored_watermark_for_incremental_bronze_load(
     repository_name = f"tracked-incremental-load-{run_id}"
     issue_id = 456
     user_id = 1_000_000_000 + (run_uuid.int % 1_000_000_000)
+    label_id = 9_000_000_000_000 + (run_uuid.int % 1_000_000_000)
     started_at = datetime(2026, 9, 20, 12, 0, tzinfo=UTC)
     finished_at = datetime(2026, 9, 20, 12, 5, tzinfo=UTC)
     stored_watermark = Watermark(
@@ -258,6 +306,17 @@ def test_tracked_full_load_uses_stored_watermark_for_incremental_bronze_load(
                     "login": f"incremental-user-{run_id}",
                     "type": "User",
                 },
+                "labels": [
+                    {
+                        "id": label_id,
+                        "name": "incremental-label",
+                        "color": "A1B2C3",
+                        "description": (
+                            "Created by the tracked incremental-load integration test."
+                        ),
+                        "default": False,
+                    }
+                ],
             }
         ]
     )
@@ -327,6 +386,24 @@ def test_tracked_full_load_uses_stored_watermark_for_incremental_bronze_load(
             .limit(2)
             .collect()
         )
+        silver_label_rows = (
+            integration_spark.table(config.silver_labels_table)
+            .where(
+                (F.col("repository_owner") == "pytest")
+                & (F.col("repository_name") == repository_name)
+                & (F.col("label_id") == label_id)
+            )
+            .select(
+                "name",
+                "color",
+                "description",
+                "is_default",
+                "source_issue_id",
+                "source_run_id",
+            )
+            .limit(2)
+            .collect()
+        )
         pipeline_run_rows = (
             integration_spark.table(config.pipeline_runs_table)
             .where(F.col("run_id") == run_id)
@@ -362,6 +439,18 @@ def test_tracked_full_load_uses_stored_watermark_for_incremental_bronze_load(
                 "source_run_id": run_id,
             }
         ]
+        assert [row.asDict() for row in silver_label_rows] == [
+            {
+                "name": "incremental-label",
+                "color": "a1b2c3",
+                "description": (
+                    "Created by the tracked incremental-load integration test."
+                ),
+                "is_default": False,
+                "source_issue_id": issue_id,
+                "source_run_id": run_id,
+            }
+        ]
         assert [row.asDict() for row in pipeline_run_rows] == [
             {
                 "status": "succeeded",
@@ -384,6 +473,13 @@ def test_tracked_full_load_uses_stored_watermark_for_incremental_bronze_load(
         )
         DeltaTable.forName(integration_spark, config.silver_users_table).delete(
             condition=f"user_id = {user_id}"
+        )
+        DeltaTable.forName(integration_spark, config.silver_labels_table).delete(
+            condition=(
+                "repository_owner = 'pytest' "
+                f"AND repository_name = '{repository_name}' "
+                f"AND label_id = {label_id}"
+            )
         )
         DeltaTable.forName(integration_spark, config.pipeline_runs_table).delete(
             condition=f"run_id = '{run_id}'"
