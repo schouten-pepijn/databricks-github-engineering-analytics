@@ -343,6 +343,13 @@ class DeltaSilverLabelWriter:
 
         self._merge_source(source)
 
+    def upsert_dataframe(self, source: DataFrame) -> None:
+        """Merge one normalized, unique Silver Label source DataFrame."""
+        self._require_utc_session()
+        self._require_required_columns(source)
+        self._require_unique_dataframe_business_keys(source)
+        self._merge_source(source)
+
     def _merge_source(self, source: DataFrame) -> None:
         """Merge one validated Label DataFrame into the current-state table."""
         target = DeltaTable.forName(self._spark, self._table_name)
@@ -385,6 +392,36 @@ class DeltaSilverLabelWriter:
             )
             .execute()
         )
+
+    def _require_required_columns(self, source: DataFrame) -> None:
+        """Reject DataFrames that cannot satisfy the Silver Label table contract."""
+        required_columns = {field.name for field in self._ROW_SCHEMA}
+        missing_columns = required_columns - set(source.columns)
+
+        if missing_columns:
+            raise ValueError(
+                f"Silver source is missing required columns: {sorted(missing_columns)}"
+            )
+
+    @staticmethod
+    def _require_unique_dataframe_business_keys(source: DataFrame) -> None:
+        """Reject DataFrames with more than one row for one Label MERGE key."""
+        duplicate_business_keys = (
+            source.groupBy(
+                "repository_owner",
+                "repository_name",
+                "label_id",
+            )
+            .count()
+            .where(F.col("count") > 1)
+            .limit(1)
+            .collect()
+        )
+
+        if duplicate_business_keys:
+            raise ValueError(
+                "Silver source contains duplicate Label business keys before MERGE"
+            )
 
     @staticmethod
     def _require_unique_business_keys(records: Sequence[SilverLabel]) -> None:
