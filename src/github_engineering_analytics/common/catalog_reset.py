@@ -170,6 +170,7 @@ def _known_table_names(config: PipelineConfig) -> tuple[str, ...]:
         config.bronze_issues_table,
         config.silver_issues_table,
         config.silver_users_table,
+        config.silver_labels_table,
         config.watermark_table,
         config.pipeline_runs_table,
     )
