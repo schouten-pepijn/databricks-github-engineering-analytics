@@ -10,7 +10,7 @@ from datetime import UTC, datetime
 from typing import ClassVar, Self
 
 from delta.tables import DeltaTable
-from pyspark.sql import DataFrame, SparkSession
+from pyspark.sql import DataFrame, SparkSession, functions as F
 from pyspark.sql.types import (
     ArrayType,
     BooleanType,
@@ -449,10 +449,38 @@ class BronzeIssueToSilverLabelTransformer:
         self,
         bronze: DataFrame,
     ) -> DataFrame:
-        """Validate the Bronze contract before parsing nested label JSON."""
+        """Parse and flatten one Silver-label observation per Bronze issue label."""
         self._require_required_columns(bronze)
 
-        raise NotImplementedError()
+        parsed_rows = bronze.withColumn(
+            "_payload",
+            F.from_json(
+                F.col("raw_json"),
+                self._GITHUB_ISSUE_LABEL_SCHEMA,
+            ),
+        )
+
+        flattened_rows = parsed_rows.select(
+            F.col("repository_owner"),
+            F.col("repository_name"),
+            F.col("issue_id").alias("source_issue_id"),
+            F.col("source_updated_at").alias("observed_at"),
+            F.col("_run_id").alias("source_run_id"),
+            F.explode(F.col("_payload.labels")).alias("_label"),
+        )
+
+        return flattened_rows.select(
+            F.col("repository_owner"),
+            F.col("repository_name"),
+            F.col("_label.id").alias("label_id"),
+            F.col("_label.name").alias("name"),
+            F.lower(F.col("_label.color")).alias("color"),
+            F.col("_label.description").alias("description"),
+            F.col("_label").getField("default").alias("is_default"),
+            F.col("source_issue_id"),
+            F.col("observed_at"),
+            F.col("source_run_id"),
+        )
 
     def _require_required_columns(self, bronze: DataFrame) -> None:
         """Reject incomplete Bronze input before any Spark JSON operation."""
