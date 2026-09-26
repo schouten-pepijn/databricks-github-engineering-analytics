@@ -107,3 +107,119 @@ def test_transform_selects_latest_observation_per_repository_label(
     assert rows[1]["label_id"] == 3001
     assert rows[1]["name"] == "documentation"
     assert rows[1]["description"] is None
+
+
+def test_transform_rejects_an_invalid_nested_label(
+    integration_spark: SparkSession,
+) -> None:
+    """Fail when a Bronze label cannot satisfy the Silver contract."""
+    bronze = integration_spark.createDataFrame(
+        [
+            (
+                "psf",
+                "requests",
+                1001,
+                datetime(2026, 9, 20, 10, 0, tzinfo=UTC),
+                (
+                    '{"id":1001,"labels":[{"id":2001,"name":"bug",'
+                    '"color":"not-a-color","description":null,"default":false}]}'
+                ),
+                "run-invalid",
+                datetime(2026, 9, 20, 10, 1, tzinfo=UTC),
+                "batch-1",
+            )
+        ],
+        schema=_BRONZE_LABEL_TEST_SCHEMA,
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="cannot form valid Silver labels",
+    ):
+        BronzeIssueToSilverLabelTransformer().transform(bronze)
+
+
+@pytest.mark.parametrize(
+    "raw_json",
+    [
+        "not-json",
+        '{"id":1001}',
+        '{"id":1001,"labels":null}',
+    ],
+)
+def test_transform_rejects_malformed_or_missing_label_arrays(
+    integration_spark: SparkSession,
+    raw_json: str,
+) -> None:
+    """Reject input that explode would otherwise silently turn into no rows."""
+    bronze = integration_spark.createDataFrame(
+        [_bronze_label_row(raw_json=raw_json)],
+        schema=_BRONZE_LABEL_TEST_SCHEMA,
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="cannot form valid Silver labels",
+    ):
+        BronzeIssueToSilverLabelTransformer().transform(bronze)
+
+
+def test_transform_rejects_a_mismatched_parent_issue_id(
+    integration_spark: SparkSession,
+) -> None:
+    """Reject a payload whose Issue ID does not match the Bronze metadata."""
+    bronze = integration_spark.createDataFrame(
+        [
+            _bronze_label_row(
+                raw_json=(
+                    '{"id":1002,"labels":[{"id":2001,"name":"bug",'
+                    '"color":"d73a4a","description":null,"default":false}]}'
+                )
+            )
+        ],
+        schema=_BRONZE_LABEL_TEST_SCHEMA,
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="cannot form valid Silver labels",
+    ):
+        BronzeIssueToSilverLabelTransformer().transform(bronze)
+
+
+def test_transform_rejects_duplicate_label_ids_in_one_issue(
+    integration_spark: SparkSession,
+) -> None:
+    """Reject ambiguous duplicate Label objects before latest-row reduction."""
+    bronze = integration_spark.createDataFrame(
+        [
+            _bronze_label_row(
+                raw_json=(
+                    '{"id":1001,"labels":['
+                    '{"id":2001,"name":"bug","color":"d73a4a",'
+                    '"description":null,"default":false},'
+                    '{"id":2001,"name":"different","color":"0e8a16",'
+                    '"description":null,"default":true}]}'
+                )
+            )
+        ],
+        schema=_BRONZE_LABEL_TEST_SCHEMA,
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="cannot form valid Silver labels",
+    ):
+        BronzeIssueToSilverLabelTransformer().transform(bronze)
+
+
+def test_transform_returns_no_rows_for_an_empty_label_array(
+    integration_spark: SparkSession,
+) -> None:
+    """Keep an Issue without labels as a valid zero-row Silver contribution."""
+    bronze = integration_spark.createDataFrame(
+        [_bronze_label_row(raw_json='{"id":1001,"labels":[]}')],
+        schema=_BRONZE_LABEL_TEST_SCHEMA,
+    )
+
+    assert BronzeIssueToSilverLabelTransformer().transform(bronze).count() == 0
