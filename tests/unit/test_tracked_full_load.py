@@ -262,7 +262,6 @@ def test_run_tracked_full_load_uses_incremental_load_when_watermark_exists(
     mocker.patch(
         "github_engineering_analytics.bronze.full_load.DeltaWatermarkRepository",
         return_value=watermark_repository,
-        create=True,
     )
     watermark_repository.get.return_value = stored_watermark
 
@@ -272,7 +271,6 @@ def test_run_tracked_full_load_uses_incremental_load_when_watermark_exists(
     incremental_load = mocker.patch(
         "github_engineering_analytics.bronze.full_load.run_incremental_load",
         return_value=result,
-        create=True,
     )
     mocker.patch(
         "github_engineering_analytics.bronze.full_load.run_bronze_to_silver",
