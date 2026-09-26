@@ -9,7 +9,7 @@ from datetime import UTC, datetime
 from typing import ClassVar, Self
 
 from delta.tables import DeltaTable
-from pyspark.sql import SparkSession
+from pyspark.sql import DataFrame, SparkSession, Window, functions as F
 from pyspark.sql.types import (
     LongType,
     StringType,
@@ -257,3 +257,125 @@ class DeltaSilverUserWriter:
             raise ValueError(f"Invalid multipart identifier: {identifier!r}")
 
         return ".".join(f"`{part.replace('`', '``')}`" for part in parts)
+
+
+class BronzeIssueToSilverUserTransformer:
+    """Extract and deterministically reduce user observations from Bronze issues.
+
+    A GitHub user has no user-level ``updated_at`` in an issue response.
+    Therefore, ``observed_at`` is the parent issue's source update timestamp.
+    """
+
+    _REQUIRED_BRONZE_COLUMNS: ClassVar[frozenset[str]] = frozenset(
+        {
+            "issue_id",
+            "source_updated_at",
+            "raw_json",
+            "_run_id",
+            "_ingested_at",
+            "_page_or_batch_reference",
+        }
+    )
+
+    _GITHUB_ISSUE_USER_SCHEMA: ClassVar[StructType] = StructType(
+        [
+            StructField("id", LongType(), nullable=True),
+            StructField(
+                "user",
+                StructType(
+                    [
+                        StructField("id", LongType(), nullable=True),
+                        StructField("login", StringType(), nullable=True),
+                        StructField("type", StringType(), nullable=True),
+                    ]
+                ),
+                nullable=True,
+            ),
+        ]
+    )
+
+    def transform(
+        self,
+        bronze: DataFrame,
+    ) -> DataFrame:
+        self._require_required_columns(bronze)
+
+        parsed_rows = bronze.withColumn(
+            "_payload",
+            F.from_json(
+                F.col("raw_json"),
+                self._GITHUB_ISSUE_USER_SCHEMA,
+            ),
+        )
+
+        normalized_rows = parsed_rows.select(
+            F.col("_payload.user.id").alias("user_id"),
+            F.col("_payload.user.login").alias("login"),
+            F.col("_payload.user.type").alias("user_type"),
+            F.col("issue_id").alias("source_issue_id"),
+            F.col("source_updated_at").alias("observed_at"),
+            F.col("_run_id").alias("source_run_id"),
+            F.col("_ingested_at"),
+            F.col("_page_or_batch_reference"),
+            F.col("raw_json"),
+            F.col("_payload.id").alias("_payload_issue_id"),
+        )
+
+        self._require_valid_normalized_rows(normalized_rows)
+
+        latest_window = Window.partitionBy("user_id").orderBy(
+            F.col("observed_at").desc(),
+            F.col("_ingested_at").desc(),
+            F.col("source_run_id").desc(),
+            F.col("_page_or_batch_reference").desc(),
+            F.col("raw_json").desc(),
+        )
+
+        return (
+            normalized_rows.withColumn(
+                "_row_number",
+                F.row_number().over(latest_window),
+            )
+            .where(F.col("_row_number") == 1)
+            .select(
+                "user_id",
+                "login",
+                "user_type",
+                "source_issue_id",
+                "observed_at",
+                "source_run_id",
+            )
+        )
+
+    def _require_required_columns(self, bronze: DataFrame) -> None:
+        """Reject an incomplete Bronze DataFrame before Spark JSON parsing."""
+        missing_columns = self._REQUIRED_BRONZE_COLUMNS - set(bronze.columns)
+
+        if missing_columns:
+            raise ValueError(
+                f"Bronze source is missing required columns: {sorted(missing_columns)}"
+            )
+
+    @staticmethod
+    def _require_valid_normalized_rows(rows: DataFrame) -> None:
+        """Fail before a MERGE when Bronze rows cannot form valid Silver users."""
+        invalid_rows = rows.where(
+            F.col("_payload_issue_id").isNull()
+            | (F.col("_payload_issue_id") != F.col("source_issue_id"))
+            | (F.col("source_issue_id") <= 0)
+            | F.col("user_id").isNull()
+            | (F.col("user_id") <= 0)
+            | F.col("login").isNull()
+            | (F.length(F.trim(F.col("login"))) == 0)
+            | F.col("user_type").isNull()
+            | (F.length(F.trim(F.col("user_type"))) == 0)
+            | F.col("observed_at").isNull()
+            | F.col("source_run_id").isNull()
+            | (F.length(F.trim(F.col("source_run_id"))) == 0)
+            | F.col("_ingested_at").isNull()
+        )
+
+        if invalid_rows.limit(1).count():
+            raise ValueError(
+                "Bronze source contains rows that cannot form valid Silver users"
+            )
