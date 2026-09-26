@@ -229,3 +229,76 @@ class SilverLabel:
             raise ValueError(f"{field_path} must be a boolean")
 
         return value
+
+
+class DeltaSilverLabelWriter:
+    """Persist the latest observed GitHub label state at Silver grain."""
+
+    _UTC_TIMEZONES: ClassVar[frozenset[str]] = frozenset({"UTC", "Etc/UTC"})
+
+    _ROW_SCHEMA: ClassVar[StructType] = StructType(
+        [
+            StructField("repository_owner", StringType(), nullable=False),
+            StructField("repository_name", StringType(), nullable=False),
+            StructField("label_id", LongType(), nullable=False),
+            StructField("name", StringType(), nullable=False),
+            StructField("color", StringType(), nullable=False),
+            StructField("description", StringType(), nullable=True),
+            StructField("is_default", BooleanType(), nullable=False),
+            StructField("source_issue_id", LongType(), nullable=False),
+            StructField("observed_at", TimestampType(), nullable=False),
+            StructField("source_run_id", StringType(), nullable=False),
+        ]
+    )
+
+    def __init__(
+        self,
+        spark: SparkSession,
+        config: PipelineConfig,
+    ) -> None:
+        self._spark = spark
+        self._schema_name = f"{config.catalog}.{config.silver_schema}"
+        self._table_name = config.silver_labels_table
+
+    def ensure_table(self) -> None:
+        """Create the Silver schema and labels current-state table when absent."""
+        self._require_utc_session()
+
+        self._spark.sql(
+            f"CREATE SCHEMA IF NOT EXISTS {self._quote_identifier(self._schema_name)}"
+        )
+
+        self._spark.sql(
+            "CREATE TABLE IF NOT EXISTS "
+            f"{self._quote_identifier(self._table_name)} ("
+            "repository_owner STRING NOT NULL, "
+            "repository_name STRING NOT NULL, "
+            "label_id BIGINT NOT NULL, "
+            "name STRING NOT NULL, "
+            "color STRING NOT NULL, "
+            "description STRING, "
+            "is_default BOOLEAN NOT NULL, "
+            "source_issue_id BIGINT NOT NULL, "
+            "observed_at TIMESTAMP NOT NULL, "
+            "source_run_id STRING NOT NULL"
+            ") USING DELTA"
+        )
+
+    def _require_utc_session(self) -> None:
+        """Reject sessions that would interpret label timestamps ambiguously."""
+        timezone = self._spark.conf.get("spark.sql.session.timeZone")
+
+        if timezone not in self._UTC_TIMEZONES:
+            raise RuntimeError(
+                "Spark session timezone must be UTC before writing Silver labels."
+            )
+
+    @staticmethod
+    def _quote_identifier(identifier: str) -> str:
+        """Quote each Unity Catalog identifier part."""
+        parts = identifier.split(".")
+
+        if not all(parts):
+            raise ValueError(f"Invalid multipart identifier: {identifier!r}")
+
+        return ".".join(f"`{part.replace('`', '``')}`" for part in parts)
