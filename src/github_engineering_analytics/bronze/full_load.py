@@ -257,10 +257,10 @@ def run_tracked_full_load(
 
     A missing committed watermark selects a full extraction; an existing one
     selects the overlap-aware incremental route. The run succeeds only after
-    Bronze, Issues Silver, and Users Silver complete. This boundary records the
-    candidate watermark but deliberately does not commit it while required Gold
-    processing is still absent. A stage failure is recorded as FAILED before
-    the original exception is re-raised.
+    Bronze, Issues Silver, Users Silver, and Labels Silver complete. This
+    boundary records the candidate watermark but deliberately does not commit
+    it while required Gold processing is still absent. A stage failure is
+    recorded as FAILED before the original exception is re-raised.
     """
     config = PipelineConfig(catalog=catalog)
     pipeline_runs = DeltaPipelineRunRepository(
