@@ -196,6 +196,7 @@ class DeltaSilverIssueWriter:
         spark: SparkSession,
         config: PipelineConfig,
     ) -> None:
+        """Bind the writer to one Spark session and Silver issues table."""
         self._spark = spark
         self._schema_name = f"{config.catalog}.{config.silver_schema}"
         self._table_name = config.silver_issues_table
@@ -437,7 +438,8 @@ class BronzeIssueToSilverTransformer:
             F.try_to_timestamp(F.col("_payload.updated_at")).alias("updated_at"),
             F.try_to_timestamp(F.col("_payload.closed_at")).alias("closed_at"),
             F.col("_run_id").alias("source_run_id"),
-            # These remain temporarily to make latest-record selection explicit.
+            # Retain ingestion metadata only as deterministic tie-breakers;
+            # the final projection removes it from the Silver table contract.
             F.col("source_updated_at").alias("_source_updated_at"),
             F.col("_ingested_at"),
             F.col("_page_or_batch_reference"),
@@ -488,7 +490,6 @@ class BronzeIssueToSilverTransformer:
         bronze: DataFrame,
     ) -> None:
         """Reject Bronze DataFrames that cannot satisfy the Silver contract."""
-
         if missing_columns := self._REQUIRED_BRONZE_COLUMNS - set(bronze.columns):
             raise ValueError(
                 f"Bronze source is missing required columns: {sorted(missing_columns)}"

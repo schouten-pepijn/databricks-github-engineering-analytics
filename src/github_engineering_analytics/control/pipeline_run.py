@@ -19,8 +19,7 @@ class PipelineRunStatus(StrEnum):
 
 @dataclass(frozen=True)
 class PipelineRun:
-    """
-    Describe one pipeline attempt before it is persisted.
+    """Describe one pipeline attempt before it is persisted.
 
     ``candidate_watermark`` is observed during extraction; it is not a
     committed position. The orchestrator may commit it only after this model
@@ -41,6 +40,7 @@ class PipelineRun:
     error_message: str | None = None
 
     def __post_init__(self) -> None:
+        """Normalize timestamps and enforce lifecycle-state invariants."""
         self._require_non_empty(self.run_id, "run_id")
         self._require_non_empty(self.source_name, "source_name")
         self._require_non_empty(self.entity_name, "entity_name")

@@ -144,6 +144,7 @@ class DeltaBronzeIssueWriter:
         spark: SparkSession,
         config: PipelineConfig,
     ) -> None:
+        """Bind the writer to one Spark session and configured Bronze table."""
         self._spark = spark
         self._schema_name = f"{config.catalog}.{config.bronze_schema}"
         self._table_name = config.bronze_issues_table

@@ -16,7 +16,11 @@ def run_bronze_to_silver_users(
     catalog: str,
     bronze_run_id: str | None = None,
 ) -> None:
-    """Transform Bronze issue-user observations into current Silver users."""
+    """Transform Bronze issue-user observations into current Silver users.
+
+    When ``bronze_run_id`` is supplied, only that append-only Bronze run is
+    processed so a tracked job cannot mix observations from another attempt.
+    """
     if bronze_run_id is not None and not bronze_run_id.strip():
         raise ValueError("bronze_run_id must not be empty when supplied")
 

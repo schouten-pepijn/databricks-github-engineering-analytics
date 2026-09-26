@@ -10,7 +10,7 @@ from pyspark.sql import SparkSession
 
 @pytest.fixture()
 def integration_spark() -> Iterator[SparkSession]:
-    """Yield a UTC Spark session only when a dedicated DEV catalog is explicit."""
+    """Yield a UTC Spark session only when a dedicated test catalog is explicit."""
     if os.getenv("RUN_DATABRICKS_INTEGRATION_TESTS") != "1":
         pytest.skip("Set RUN_DATABRICKS_INTEGRATION_TESTS=1 to run integration tests.")
 

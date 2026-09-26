@@ -23,7 +23,11 @@ from github_engineering_analytics.common.config import PipelineConfig
 
 @dataclass(frozen=True)
 class SilverUser:
-    """One GitHub user observed in a Bronze issue payload."""
+    """One GitHub user state observed through a parent issue payload.
+
+    GitHub issue responses do not expose a user-level update timestamp, so
+    ``observed_at`` is the parent issue's source update time.
+    """
 
     user_id: int
     login: str
@@ -152,6 +156,7 @@ class DeltaSilverUserWriter:
         spark: SparkSession,
         config: PipelineConfig,
     ) -> None:
+        """Bind the writer to one Spark session and Silver users table."""
         self._spark = spark
         self._schema_name = f"{config.catalog}.{config.silver_schema}"
         self._table_name = config.silver_users_table
@@ -340,6 +345,7 @@ class BronzeIssueToSilverUserTransformer:
         self,
         bronze: DataFrame,
     ) -> DataFrame:
+        """Return one validated, latest observation per global GitHub user ID."""
         self._require_required_columns(bronze)
 
         parsed_rows = bronze.withColumn(
@@ -365,6 +371,8 @@ class BronzeIssueToSilverUserTransformer:
 
         self._require_valid_normalized_rows(normalized_rows)
 
+        # One user can occur on many issues and overlap runs. The complete
+        # ordering makes the retained observation reproducible when times tie.
         latest_window = Window.partitionBy("user_id").orderBy(
             F.col("observed_at").desc(),
             F.col("_ingested_at").desc(),

@@ -58,6 +58,7 @@ class DeltaPipelineRunRepository:
         spark: SparkSession,
         config: PipelineConfig,
     ) -> None:
+        """Bind the repository to one Spark session and lifecycle table."""
         self._spark = spark
         self._schema_name = f"{config.catalog}.{config.control_schema}"
         self._table_name = config.pipeline_runs_table

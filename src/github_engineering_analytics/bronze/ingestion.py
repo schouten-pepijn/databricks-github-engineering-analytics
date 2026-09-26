@@ -16,7 +16,7 @@ from github_engineering_analytics.control.watermark import Watermark
 
 @dataclass(frozen=True)
 class BronzeIngestionResult:
-    """Operational counts from one Bronze ingestion attempt."""
+    """Counts and the uncommitted source position from one Bronze attempt."""
 
     records_extracted: int
     batches_written: int
@@ -31,6 +31,7 @@ class GitHubIssueBronzeIngestion:
         client: GitHubClient,
         writer: DeltaBronzeIssueWriter,
     ) -> None:
+        """Compose an API client with the append-only Bronze writer."""
         self._client = client
         self._writer = writer
 
@@ -133,6 +134,8 @@ class GitHubIssueBronzeIngestion:
 
         candidate_watermark: Watermark | None = None
         if latest_source_updated_at is not None:
+            # Overlap can return only older rows. Never offer a candidate that
+            # would regress the position already committed by an earlier run.
             candidate_value = latest_source_updated_at
             if watermark is not None:
                 candidate_value = max(candidate_value, watermark.value)

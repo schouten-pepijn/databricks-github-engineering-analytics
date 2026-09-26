@@ -1,4 +1,4 @@
-"""Application boundary for a GitHub Issues full load into Bronze."""
+"""Tracked GitHub Issues ingestion and Bronze-to-Silver job entry point."""
 
 from __future__ import annotations
 
@@ -36,7 +36,7 @@ from github_engineering_analytics.silver.users_full_load import (
 
 @dataclass(frozen=True)
 class FullLoadSettings:
-    """Validated runtime configuration for one GitHub Issues full load run."""
+    """Validated runtime configuration for one tracked GitHub Issues run."""
 
     catalog: str
     owner: str
@@ -105,7 +105,9 @@ class DatabricksSecretGetter(Protocol):
         spark: SparkSession,
         scope: str,
         key: str,
-    ) -> str: ...
+    ) -> str:
+        """Return one secret value without exposing it to job parameters."""
+        ...
 
 
 def _current_utc_time() -> datetime:
@@ -137,7 +139,6 @@ def resolve_github_token(
     secret_getter: DatabricksSecretGetter = _get_databricks_secret,
 ) -> str | None:
     """Resolve a direct GitHub token or a configured Databricks secret."""
-
     if settings.github_token is not None:
         return settings.github_token
 
@@ -159,8 +160,10 @@ def resolve_github_token(
             scope=scope,
             key=key,
         )
-    except Exception as e:
-        raise RuntimeError(f"Unable to read Github token secret {scope}/{key}") from e
+    except Exception as error:
+        raise RuntimeError(
+            f"Unable to read GitHub token secret {scope}/{key}"
+        ) from error
 
     if not token.strip():
         raise ValueError(f"Databricks secret {scope}/{key} must not be empty")
@@ -224,7 +227,7 @@ def run_incremental_load(
     ingested_at: datetime,
     watermark: Watermark,
 ) -> BronzeIngestionResult:
-    """Run one overlap-aware GitHub Issues extraction into Bronze."""
+    """Run an extraction from the committed watermark's overlap boundary."""
     ingestion = _create_bronze_ingestion(
         spark=spark,
         catalog=catalog,
@@ -250,13 +253,15 @@ def run_tracked_full_load(
     run_id_factory: Callable[[], UUID] = uuid4,
     clock: Callable[[], datetime] = _current_utc_time,
 ) -> BronzeIngestionResult:
-    """Persist the lifecycle around Bronze ingestion and both Silver entities.
+    """Run and record one full-or-incremental Bronze-to-Silver lifecycle.
 
-    The run succeeds only after Bronze, Issues Silver, and Users Silver complete.
-    A failure in any stage is recorded as FAILED before the original exception is
-    re-raised.
+    A missing committed watermark selects a full extraction; an existing one
+    selects the overlap-aware incremental route. The run succeeds only after
+    Bronze, Issues Silver, and Users Silver complete. This boundary records the
+    candidate watermark but deliberately does not commit it while required Gold
+    processing is still absent. A stage failure is recorded as FAILED before
+    the original exception is re-raised.
     """
-
     config = PipelineConfig(catalog=catalog)
     pipeline_runs = DeltaPipelineRunRepository(
         spark=spark,
@@ -280,6 +285,8 @@ def run_tracked_full_load(
     pipeline_runs.record_started(started_run)
 
     try:
+        # The durable watermark is the sole mode switch: no stored position
+        # means bootstrap; otherwise replay its deliberate overlap window.
         if watermark_before is None:
             result = run_full_load(
                 spark=spark,
@@ -345,7 +352,7 @@ def main(
     token_secret_scope: str | None = None,
     token_secret_key: str | None = None,
 ) -> None:
-    """Run a GitHub Issues full load from local or supplied configuration.
+    """Run tracked GitHub Issues ingestion from local or supplied configuration.
 
     When called without arguments, configuration comes from local environment
     variables. The ``cli`` adapter supplies the five task arguments for a
@@ -391,13 +398,13 @@ def main(
         repository_name=settings.repository,
         records_extracted=result.records_extracted,
         batches_written=result.batches_written,
-    ).info("Completed full Bronze load.")
+    ).info("Completed tracked GitHub Issues load.")
 
 
 def cli() -> None:
-    """Parse Python-wheel task arguments and delegate to the full-load entry point."""
+    """Parse wheel-task arguments and delegate to the tracked-load entry point."""
     parser = argparse.ArgumentParser(
-        description="Run a GitHub Issues full load into Bronze storage."
+        description="Run tracked GitHub Issues ingestion through Bronze and Silver."
     )
     parser.add_argument("--catalog")
     parser.add_argument("--owner")

@@ -26,6 +26,8 @@ class SilverLabel:
     """One GitHub label observed in a Bronze issue payload.
 
     Grain: one label definition per repository and GitHub label ID.
+    GitHub labels have no label-level update timestamp in an issue response,
+    so ``observed_at`` uses the parent issue's source update time.
     """
 
     repository_owner: str
@@ -51,7 +53,6 @@ class SilverLabel:
         source_run_id: str,
     ) -> tuple[Self, ...]:
         """Create zero or more normalized labels from one Bronze issue."""
-
         for value, field_name in (
             (repository_owner, "repository_owner"),
             (repository_name, "repository_name"),
@@ -122,7 +123,6 @@ class SilverLabel:
         source_run_id: str,
     ) -> Self:
         """Normalize and validate one nested GitHub label object."""
-
         return cls(
             repository_owner=repository_owner,
             repository_name=repository_name,
@@ -244,7 +244,11 @@ class SilverLabel:
 
 
 class DeltaSilverLabelWriter:
-    """Persist the latest observed GitHub label state at Silver grain."""
+    """Create the repository-scoped Silver label table contract.
+
+    Table grain: one row per repository owner, repository name, and GitHub
+    label ID. ``description`` is the only nullable domain attribute.
+    """
 
     _UTC_TIMEZONES: ClassVar[frozenset[str]] = frozenset({"UTC", "Etc/UTC"})
 
@@ -268,6 +272,7 @@ class DeltaSilverLabelWriter:
         spark: SparkSession,
         config: PipelineConfig,
     ) -> None:
+        """Bind the writer to one Spark session and Silver labels table."""
         self._spark = spark
         self._schema_name = f"{config.catalog}.{config.silver_schema}"
         self._table_name = config.silver_labels_table

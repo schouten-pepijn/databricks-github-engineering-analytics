@@ -1,4 +1,4 @@
-"""Live Delta integration coverage for the tracked Bronze full-load boundary."""
+"""Live Delta coverage for tracked full and incremental Bronze-to-Silver runs."""
 
 import os
 from collections.abc import Iterator

@@ -2,7 +2,7 @@ resources:
   jobs:
     github_issues_full_load:
       name: GitHub Issues full Bronze load
-      description: Extract gitHub Issues and append their raw payloads
+      description: Extract GitHub Issues and refresh the scoped Silver entities
 
       tasks:
         - task_key: full_load

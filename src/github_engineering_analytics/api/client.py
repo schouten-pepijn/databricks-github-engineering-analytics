@@ -34,6 +34,7 @@ class GitHubRateLimitError(GitHubRetryableError):
         message: str,
         retry_after_seconds: float | None = None,
     ) -> None:
+        """Store the optional server-directed delay for the retry strategy."""
         super().__init__(message)
         self.retry_after_seconds = retry_after_seconds
 
@@ -43,8 +44,7 @@ class GitHubServerError(GitHubRetryableError):
 
 
 class WaitGitHubRateLimit(wait_base):
-    """
-    Tenacity wait strategy.
+    """Use GitHub's requested delay before falling back to local backoff.
 
     If GitHub explicitly provides a retry delay through Retry-After
     or X-RateLimit-Reset, that delay is used. Otherwise the fallback
@@ -52,9 +52,11 @@ class WaitGitHubRateLimit(wait_base):
     """
 
     def __init__(self, fallback: wait_base) -> None:
+        """Create the strategy with the wait policy used as a fallback."""
         self.fallback = fallback
 
     def __call__(self, retry_state: RetryCallState) -> float:
+        """Return the server delay when present, otherwise the fallback delay."""
         if retry_state.outcome is not None:
             exception = retry_state.outcome.exception()
 
@@ -127,8 +129,7 @@ class GitHubClient:
         url: str,
         **kwargs,
     ) -> requests.Response:
-        """
-        Execute a request with retry handling.
+        """Execute a request with retry handling.
 
         Retries:
         - GitHub rate-limit errors
@@ -236,8 +237,7 @@ class GitHubClient:
         since: datetime | None = None,
         per_page: int = 100,
     ) -> Iterator[dict]:
-        """
-        Iterate over every issue record updated on or after ``since``.
+        """Iterate over every issue record updated on or after ``since``.
 
         GitHub's issues endpoint also returns pull requests. Retain both raw
         record types here; Silver owns their classification. ``since`` must be

@@ -126,7 +126,7 @@ def test_run_tracked_full_load_records_a_successful_lifecycle(
         "github_engineering_analytics.bronze.full_load.run_bronze_to_silver_users",
     )
 
-    # Verzamel alle stage-aanroepen zodat de test ook hun volgorde controleert.
+    # Attach both stages to one parent so the assertion also verifies ordering.
     pipeline_calls = Mock()
     pipeline_calls.attach_mock(bronze_load, "bronze")
     pipeline_calls.attach_mock(silver_load, "silver")

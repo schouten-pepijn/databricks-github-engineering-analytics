@@ -1,3 +1,5 @@
+"""Delta persistence for committed incremental source watermarks."""
+
 from __future__ import annotations
 
 from datetime import UTC, datetime
@@ -44,13 +46,13 @@ class DeltaWatermarkRepository:
         spark: SparkSession,
         config: PipelineConfig,
     ) -> None:
+        """Bind the repository to one Spark session and control table."""
         self._spark = spark
         self._schema_name = f"{config.catalog}.{config.control_schema}"
         self._table_name = config.watermark_table
 
     def ensure_table(self) -> None:
         """Create the control schema and Delta table when they are absent."""
-
         self._require_utc_session()
 
         self._spark.sql(
@@ -75,12 +77,10 @@ class DeltaWatermarkRepository:
         source_name: str,
         entity_name: str,
     ) -> Watermark | None:
-        """
-        Return the last successfully committed watermark for an entity.
+        """Return the last successfully committed watermark for an entity.
 
         ``None`` means this source/entity has not been processed before.
         """
-
         self._validate_key(source_name, entity_name)
         self._require_utc_session()
 
@@ -133,8 +133,7 @@ class DeltaWatermarkRepository:
         run_id: str,
         committed_at: datetime,
     ) -> None:
-        """
-        Commit a candidate watermark after all downstream processing succeeds.
+        """Commit a candidate after all required downstream processing succeeds.
 
         The merge permits only equal-or-later values, making retries and
         out-of-order completions unable to regress the stored position.

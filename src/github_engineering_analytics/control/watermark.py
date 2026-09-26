@@ -17,6 +17,7 @@ class Watermark:
     overlap_seconds: int = 300
 
     def __post_init__(self) -> None:
+        """Validate the overlap and normalize the committed position to UTC."""
         if self.value.tzinfo is None or self.value.utcoffset() is None:
             raise ValueError("value must be timezone-aware")
 

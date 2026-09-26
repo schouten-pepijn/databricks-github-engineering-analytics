@@ -161,7 +161,11 @@ def _get_or_create_spark(environment: Mapping[str, str]) -> SparkSession:
 
 
 def _known_table_names(config: PipelineConfig) -> tuple[str, ...]:
-    """Return the deliberate reset whitelist for the current project surface."""
+    """Return only tables whose live reset behavior is currently supported.
+
+    Entities still under construction are added only after their persistence
+    and test-cleanup semantics are complete.
+    """
     return (
         config.bronze_issues_table,
         config.silver_issues_table,
