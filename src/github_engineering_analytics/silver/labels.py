@@ -310,6 +310,89 @@ class DeltaSilverLabelWriter:
                 "Spark session timezone must be UTC before writing Silver labels."
             )
 
+    def upsert(self, records: Sequence[SilverLabel]) -> None:
+        """Merge validated label observations into the Silver current-state table."""
+        if not records:
+            return
+
+        self._require_utc_session()
+        self._require_unique_business_keys(records)
+
+        source = self._spark.createDataFrame(
+            [
+                (
+                    record.repository_owner,
+                    record.repository_name,
+                    record.label_id,
+                    record.name,
+                    record.color,
+                    record.description,
+                    record.is_default,
+                    record.source_issue_id,
+                    record.observed_at,
+                    record.source_run_id,
+                )
+                for record in records
+            ],
+            schema=self._ROW_SCHEMA,
+        )
+
+        self._merge_source(source)
+
+    def _merge_source(self, source: DataFrame) -> None:
+        """Merge one validated Label DataFrame into the current-state table."""
+        target = DeltaTable.forName(self._spark, self._table_name)
+
+        (
+            target.alias("target")
+            .merge(
+                source.alias("source"),
+                (
+                    "target.repository_owner = source.repository_owner "
+                    "AND target.repository_name = source.repository_name "
+                    "AND target.label_id = source.label_id"
+                ),
+            )
+            .whenMatchedUpdate(
+                condition="source.observed_at >= target.observed_at",
+                set={
+                    "name": "source.name",
+                    "color": "source.color",
+                    "description": "source.description",
+                    "is_default": "source.is_default",
+                    "source_issue_id": "source.source_issue_id",
+                    "observed_at": "source.observed_at",
+                    "source_run_id": "source.source_run_id",
+                },
+            )
+            .whenNotMatchedInsert(
+                values={
+                    "repository_owner": "source.repository_owner",
+                    "repository_name": "source.repository_name",
+                    "label_id": "source.label_id",
+                    "name": "source.name",
+                    "color": "source.color",
+                    "description": "source.description",
+                    "is_default": "source.is_default",
+                    "source_issue_id": "source.source_issue_id",
+                    "observed_at": "source.observed_at",
+                    "source_run_id": "source.source_run_id",
+                },
+            )
+            .execute()
+        )
+
+    @staticmethod
+    def _require_unique_business_keys(records: Sequence[SilverLabel]) -> None:
+        """Reject multiple source rows for the same repository-scoped label."""
+        business_keys = {
+            (record.repository_owner, record.repository_name, record.label_id)
+            for record in records
+        }
+
+        if len(business_keys) != len(records):
+            raise ValueError("records must have unique Silver label business keys")
+
     @staticmethod
     def _quote_identifier(identifier: str) -> str:
         """Quote each Unity Catalog identifier part."""
