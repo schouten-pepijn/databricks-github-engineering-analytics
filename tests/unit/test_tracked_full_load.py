@@ -11,8 +11,22 @@ from github_engineering_analytics.control.pipeline_run import PipelineRunStatus
 from github_engineering_analytics.control.watermark import Watermark
 
 
+@pytest.fixture()
+def no_watermark_repository(mocker) -> Mock:
+    """Provide a control repository representing a first-ever source load."""
+    watermark_repository = Mock()
+    watermark_repository.get.return_value = None
+    mocker.patch(
+        "github_engineering_analytics.bronze.full_load.DeltaWatermarkRepository",
+        return_value=watermark_repository,
+    )
+
+    return watermark_repository
+
+
 def test_run_tracked_full_load_records_silver_failure_and_reraises(
     mocker,
+    no_watermark_repository: Mock,
 ) -> None:
     spark = Mock()
     repository = Mock()
