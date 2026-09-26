@@ -29,6 +29,9 @@ from github_engineering_analytics.control.watermark_repository import (
     DeltaWatermarkRepository,
 )
 from github_engineering_analytics.silver.full_load import run_bronze_to_silver
+from github_engineering_analytics.silver.users_full_load import (
+    run_bronze_to_silver_users,
+)
 
 
 @dataclass(frozen=True)
@@ -247,10 +250,11 @@ def run_tracked_full_load(
     run_id_factory: Callable[[], UUID] = uuid4,
     clock: Callable[[], datetime] = _current_utc_time,
 ) -> BronzeIngestionResult:
-    """Persist the lifecycle around Bronze ingestion and Silver processing.
+    """Persist the lifecycle around Bronze ingestion and both Silver entities.
 
-    The run succeeds only after both stages complete. A Bronze or Silver
-    failure is recorded as FAILED before the original exception is re-raised.
+    The run succeeds only after Bronze, Issues Silver, and Users Silver complete.
+    A failure in any stage is recorded as FAILED before the original exception is
+    re-raised.
     """
 
     config = PipelineConfig(catalog=catalog)
@@ -303,6 +307,11 @@ def run_tracked_full_load(
             catalog=catalog,
             bronze_run_id=started_run.run_id,
         )
+        run_bronze_to_silver_users(
+            spark=spark,
+            catalog=catalog,
+            bronze_run_id=started_run.run_id,
+        )
     except Exception as error:
         failed_run = started_run.fail(
             error_message=str(error).strip() or type(error).__name__,
@@ -312,7 +321,7 @@ def run_tracked_full_load(
         try:
             pipeline_runs.record_finished(failed_run)
         except Exception:
-            # Lifecycle persistence must not hide the original Bronze failure
+            # Lifecycle persistence must not hide the original stage failure
             # that determines the job result and its retry behaviour.
             logger.bind(run_id=started_run.run_id).exception(
                 "Failed to persist pipeline run failure."
