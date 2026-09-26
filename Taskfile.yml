@@ -30,6 +30,8 @@ tasks:
 
   test:integration:
     desc: Run opt-in Databricks integration tests
+    env:
+        RUN_DATABRICKS_INTEGRATION_TESTS: "1"
     requires:
       vars:
         - DATABRICKS_TEST_CATALOG

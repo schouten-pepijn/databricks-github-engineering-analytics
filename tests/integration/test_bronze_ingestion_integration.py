@@ -16,6 +16,7 @@ from github_engineering_analytics.bronze.ingestion import (
 )
 from github_engineering_analytics.bronze.issues import DeltaBronzeIssueWriter
 from github_engineering_analytics.common.config import PipelineConfig
+from github_engineering_analytics.control.watermark import Watermark
 
 pytestmark = pytest.mark.integration
 
@@ -55,6 +56,9 @@ def test_full_load_persists_one_mocked_github_issue(
         assert result == BronzeIngestionResult(
             records_extracted=1,
             batches_written=1,
+            candidate_watermark=Watermark(
+                value=datetime(2026, 9, 20, 12, 3, tzinfo=UTC),
+            ),
         )
         client.iter_issues.assert_called_once_with(
             owner="delta-io",
