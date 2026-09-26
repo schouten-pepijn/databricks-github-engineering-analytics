@@ -72,3 +72,52 @@ def test_from_bronze_row_rejects_a_mismatched_issue_id() -> None:
         match="Bronze source_issue_id must match payload\\['id'\\]",
     ):
         _from_payload(_validate_issue_payload(id=1002))
+
+
+def test_from_bronze_row_rejects_invalid_json() -> None:
+    with pytest.raises(ValueError, match="raw_json must contain valid JSON"):
+        SilverUser.from_bronze_row(
+            raw_json="not-json",
+            source_issue_id=1001,
+            source_updated_at=datetime(2026, 9, 20, 11, 30, tzinfo=UTC),
+            source_run_id="run-123",
+        )
+
+
+def test_from_bronze_row_rejects_naive_observation_timestamp() -> None:
+    with pytest.raises(ValueError, match="source_updated_at must be timezone-aware"):
+        _from_payload(
+            _validate_issue_payload(),
+            source_updated_at=datetime(2026, 9, 20, 11, 30),
+        )
+
+
+def test_from_bronze_row_rejects_an_empty_user_login() -> None:
+    with pytest.raises(
+        ValueError,
+        match="payload\\['user'\\]\\['login'\\] must be a non-empty string",
+    ):
+        _from_payload(
+            _validate_issue_payload(
+                user={
+                    "id": 2001,
+                    "login": "",
+                    "type": "User",
+                }
+            )
+        )
+
+
+def test_from_bronze_row_rejects_a_missing_user_type() -> None:
+    with pytest.raises(
+        ValueError,
+        match="payload\\['user'\\]\\['type'\\] must be a non-empty string",
+    ):
+        _from_payload(
+            _validate_issue_payload(
+                user={
+                    "id": 2001,
+                    "login": "octocat",
+                }
+            )
+        )
