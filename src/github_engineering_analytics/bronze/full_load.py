@@ -29,6 +29,9 @@ from github_engineering_analytics.control.watermark_repository import (
     DeltaWatermarkRepository,
 )
 from github_engineering_analytics.silver.full_load import run_bronze_to_silver
+from github_engineering_analytics.silver.labels_full_load import (
+    run_bronze_to_silver_labels,
+)
 from github_engineering_analytics.silver.users_full_load import (
     run_bronze_to_silver_users,
 )
@@ -315,6 +318,11 @@ def run_tracked_full_load(
             bronze_run_id=started_run.run_id,
         )
         run_bronze_to_silver_users(
+            spark=spark,
+            catalog=catalog,
+            bronze_run_id=started_run.run_id,
+        )
+        run_bronze_to_silver_labels(
             spark=spark,
             catalog=catalog,
             bronze_run_id=started_run.run_id,
