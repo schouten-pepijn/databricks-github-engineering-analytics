@@ -45,6 +45,17 @@ def make_label(
     )
 
 
+def make_dataframe_source() -> Mock:
+    """Build a mocked DataFrame satisfying the Silver label writer contract."""
+    source = Mock()
+    source.columns = [field.name for field in DeltaSilverLabelWriter._ROW_SCHEMA]
+    (
+        source.groupBy.return_value.count.return_value.where.return_value.limit.return_value.collect.return_value
+    ) = []
+
+    return source
+
+
 def test_ensure_table_creates_silver_schema_and_label_table() -> None:
     """Create the repository-scoped current-state Labels table when absent."""
     spark, writer = make_writer()
@@ -195,3 +206,48 @@ def test_upsert_merges_one_label_using_the_silver_business_key(mocker) -> None:
         "source_run_id": "source.source_run_id",
     }
     insert_builder.execute.assert_called_once()
+
+
+def test_upsert_dataframe_rejects_missing_required_columns_before_writing(
+    mocker,
+) -> None:
+    """Reject an incomplete normalized Label DataFrame before Delta work."""
+    delta_table = mocker.patch(
+        "github_engineering_analytics.silver.labels.DeltaTable",
+    )
+    spark, writer = make_writer()
+    source = make_dataframe_source()
+    source.columns.remove("observed_at")
+
+    with pytest.raises(
+        ValueError,
+        match=r"missing required columns: \['observed_at'\]",
+    ):
+        writer.upsert_dataframe(source)
+
+    source.groupBy.assert_not_called()
+    delta_table.forName.assert_not_called()
+
+
+def test_upsert_dataframe_rejects_duplicate_business_keys_before_merging(
+    mocker,
+) -> None:
+    """Reject an ambiguous DataFrame source before its Delta MERGE."""
+    delta_table = mocker.patch(
+        "github_engineering_analytics.silver.labels.DeltaTable",
+    )
+    spark, writer = make_writer()
+    source = make_dataframe_source()
+    (
+        source.groupBy.return_value.count.return_value.where.return_value.limit.return_value.collect.return_value
+    ) = [Mock()]
+
+    with pytest.raises(ValueError, match="duplicate Label business keys"):
+        writer.upsert_dataframe(source)
+
+    source.groupBy.assert_called_once_with(
+        "repository_owner",
+        "repository_name",
+        "label_id",
+    )
+    delta_table.forName.assert_not_called()
