@@ -178,10 +178,11 @@ def run_full_load(
     This function does not manage watermarks, pipeline-run state, Silver
     processing, Databricks secrets, or job configuration.
     """
-    config = PipelineConfig(catalog=catalog)
-    client = GitHubClient(token=github_token)
-    writer = DeltaBronzeIssueWriter(spark=spark, config=config)
-    ingestion = GitHubIssueBronzeIngestion(client=client, writer=writer)
+    ingestion = _create_bronze_ingestion(
+        spark=spark,
+        catalog=catalog,
+        github_token=github_token,
+    )
 
     return ingestion.full_load(
         owner=owner,
