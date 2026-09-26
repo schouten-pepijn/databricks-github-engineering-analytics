@@ -123,7 +123,28 @@ class GitHubIssueBronzeIngestion:
             records_extracted += len(records)
             batches_written += 1
 
+            latest_in_batch = max(record.source_updated_at for record in records)
+
+            if (
+                latest_source_updated_at is None
+                or latest_in_batch > latest_source_updated_at
+            ):
+                latest_source_updated_at = latest_in_batch
+
+        candidate_watermark: Watermark | None = None
+        if latest_source_updated_at is not None:
+            candidate_value = latest_source_updated_at
+            if watermark is not None:
+                candidate_value = max(candidate_value, watermark.value)
+                candidate_watermark = Watermark(
+                    value=candidate_value,
+                    overlap_seconds=watermark.overlap_seconds,
+                )
+            else:
+                candidate_watermark = Watermark(value=candidate_value)
+
         return BronzeIngestionResult(
             records_extracted=records_extracted,
             batches_written=batches_written,
+            candidate_watermark=candidate_watermark,
         )
