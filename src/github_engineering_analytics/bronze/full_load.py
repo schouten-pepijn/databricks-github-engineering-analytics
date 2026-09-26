@@ -24,6 +24,10 @@ from github_engineering_analytics.control.pipeline_run import PipelineRun
 from github_engineering_analytics.control.pipeline_run_repository import (
     DeltaPipelineRunRepository,
 )
+from github_engineering_analytics.control.watermark import Watermark
+from github_engineering_analytics.control.watermark_repository import (
+    DeltaWatermarkRepository,
+)
 from github_engineering_analytics.silver.full_load import run_bronze_to_silver
 
 
