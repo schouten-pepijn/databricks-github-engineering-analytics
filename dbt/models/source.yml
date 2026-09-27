@@ -13,7 +13,7 @@ sources:
       - name: github_issues
         description: >
           One current normalized GitHub issue per repository-scoped issue ID.
-          This is the future source of the Gold fact_issue relation.
+          This is the source of the current-state Gold fact_issue relation.
         data_tests:
           - unique_combination_of_columns:
               arguments:

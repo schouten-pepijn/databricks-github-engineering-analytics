@@ -1,0 +1,133 @@
+version: 2
+
+models:
+  - name: fact_issue
+    description: >
+      Current-state Gold Issue fact at one row per repository-scoped GitHub
+      Issue ID. It provides conformed repository, author, and calendar foreign
+      keys while retaining Issue business keys and lineage for audit drill-through.
+
+    data_tests:
+      - unique_combination_of_columns:
+          arguments:
+            combination_of_columns:
+              - repository_owner
+              - repository_name
+              - issue_id
+
+    columns:
+      - name: issue_key
+        description: >
+          Deterministic SHA-256 surrogate key from repository_owner,
+          repository_name, and issue_id. This is the fact primary key and the
+          target key used by bridge_issue_label.
+        data_tests:
+          - not_null
+          - unique
+
+      - name: repository_key
+        description: Foreign key to the current Type-1 repository dimension.
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref("dim_repository")
+                field: repository_key
+
+      - name: author_key
+        description: Foreign key to the current Type-1 author user dimension.
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref("dim_user")
+                field: user_key
+
+      - name: created_date_key
+        description: Foreign key to dim_date for the Issue creation calendar date.
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref("dim_date")
+                field: date_key
+
+      - name: updated_date_key
+        description: Foreign key to dim_date for the latest source update date.
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref("dim_date")
+                field: date_key
+
+      - name: closed_date_key
+        description: >
+          Nullable foreign key to dim_date for the closing date. Null denotes
+          an Issue that remains open in the current source state.
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref("dim_date")
+                field: date_key
+
+      - name: repository_owner
+        description: Repository owner in the Issue natural business key.
+        data_tests:
+          - not_null
+
+      - name: repository_name
+        description: Repository name in the Issue natural business key.
+        data_tests:
+          - not_null
+
+      - name: issue_id
+        description: Stable GitHub Issue identifier within the repository scope.
+        data_tests:
+          - not_null
+
+      - name: issue_number
+        description: Human-facing Issue number within its repository.
+        data_tests:
+          - not_null
+
+      - name: title
+        description: Current Issue title retained for descriptive drill-through.
+        data_tests:
+          - not_null
+
+      - name: state
+        description: Current GitHub Issue workflow state.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ["open", "closed"]
+
+      - name: is_pull_request
+        description: Whether GitHub identifies this Issue record as a pull request.
+        data_tests:
+          - not_null
+
+      - name: author_user_id
+        description: Stable GitHub author identifier retained beside author_key.
+        data_tests:
+          - not_null
+
+      - name: created_at
+        description: Source timestamp at which the Issue was created.
+        data_tests:
+          - not_null
+
+      - name: updated_at
+        description: Latest source timestamp at which the Issue was updated.
+        data_tests:
+          - not_null
+
+      - name: closed_at
+        description: Nullable source timestamp at which the Issue was closed.
+
+      - name: source_run_id
+        description: Python pipeline run that supplied the current Silver state.
+        data_tests:
+          - not_null
