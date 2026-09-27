@@ -136,3 +136,8 @@ tasks:
     desc: Validate dbt source contracts for Python-owned Silver tables
     cmds:
       - uv run dbt test --project-dir dbt --profiles-dir dbt --select source:silver
+
+  dbt:build-dim-date:
+    desc: Build and test the Gold calendar dimension
+    cmds:
+      - uv run dbt build --project-dir dbt --profiles-dir dbt --select dim_date
