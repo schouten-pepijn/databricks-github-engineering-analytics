@@ -222,6 +222,64 @@ def test_record_finished_rejects_running_run_before_writing() -> None:
     spark.table.assert_not_called()
 
 
+def test_record_candidate_rejects_terminal_run_before_writing() -> None:
+    spark, repository = make_repository()
+    running_run = PipelineRun(
+        run_id="run-123",
+        source_name="github",
+        entity_name="issues",
+        started_at=datetime(2026, 9, 19, 12, 0, tzinfo=UTC),
+        watermark_before=None,
+    )
+    succeeded_run = running_run.succeed(
+        candidate_watermark=None,
+        finished_at=datetime(2026, 9, 19, 12, 5, tzinfo=UTC),
+    )
+
+    with pytest.raises(ValueError, match="record_candidate requires a running"):
+        repository.record_candidate(succeeded_run)
+
+    spark.createDataFrame.assert_not_called()
+    spark.table.assert_not_called()
+
+
+@patch("github_engineering_analytics.control.pipeline_run_repository.F")
+@patch("github_engineering_analytics.control.pipeline_run_repository.DeltaTable")
+def test_record_candidate_updates_only_candidate_on_running_row(
+    delta_table: Mock,
+    functions: Mock,
+) -> None:
+    spark, repository = make_repository()
+    functions.col.return_value = Mock()
+    configure_existing_run_statuses(spark, ["running"])
+    update_builder = configure_delta_update(delta_table, spark)
+    pending_run = PipelineRun(
+        run_id="run-123",
+        source_name="github",
+        entity_name="issues",
+        started_at=datetime(2026, 9, 19, 12, 0, tzinfo=UTC),
+        watermark_before=None,
+    ).with_candidate_watermark(
+        Watermark(value=datetime(2026, 9, 19, 12, 3, tzinfo=UTC))
+    )
+
+    repository.record_candidate(pending_run)
+
+    merge_builder = (
+        delta_table.forName.return_value.alias.return_value.merge.return_value
+    )
+    merge_builder.whenMatchedUpdate.assert_called_once_with(
+        condition="target.status = 'running'",
+        set={
+            "candidate_watermark_value": "source.candidate_watermark_value",
+            "candidate_watermark_overlap_seconds": (
+                "source.candidate_watermark_overlap_seconds"
+            ),
+        },
+    )
+    update_builder.execute.assert_called_once()
+
+
 @patch("github_engineering_analytics.control.pipeline_run_repository.F")
 @patch("github_engineering_analytics.control.pipeline_run_repository.DeltaTable")
 def test_record_finished_updates_running_row_to_succeeded(

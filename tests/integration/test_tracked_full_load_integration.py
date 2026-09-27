@@ -18,6 +18,7 @@ from github_engineering_analytics.control.watermark_repository import (
     DeltaWatermarkRepository,
 )
 from github_engineering_analytics.orchestration.tracked_load import (
+    TrackedLoadResult,
     run_tracked_full_load,
 )
 
@@ -63,7 +64,7 @@ def isolated_github_issues_watermark(
             ).write.format("delta").mode("append").saveAsTable(config.watermark_table)
 
 
-def test_tracked_full_load_persists_bronze_silver_and_successful_run(
+def test_tracked_full_load_persists_bronze_silver_and_pending_run(
     integration_spark: SparkSession,
     mocker,
     isolated_github_issues_watermark: DeltaWatermarkRepository,
@@ -126,11 +127,14 @@ def test_tracked_full_load_persists_bronze_silver_and_successful_run(
             clock=Mock(side_effect=[started_at, finished_at]),
         )
 
-        assert result == BronzeIngestionResult(
-            records_extracted=1,
-            batches_written=1,
-            candidate_watermark=Watermark(
-                value=datetime(2026, 9, 20, 12, 3, tzinfo=UTC),
+        assert result == TrackedLoadResult(
+            run_id=run_id,
+            ingestion=BronzeIngestionResult(
+                records_extracted=1,
+                batches_written=1,
+                candidate_watermark=Watermark(
+                    value=datetime(2026, 9, 20, 12, 3, tzinfo=UTC),
+                ),
             ),
         )
         client.iter_issues.assert_called_once_with(
@@ -265,10 +269,10 @@ def test_tracked_full_load_persists_bronze_silver_and_successful_run(
         assert pipeline_run_rows[0].asDict() == {
             "source_name": "github",
             "entity_name": "issues",
-            "status": "succeeded",
+            "status": "running",
             "error_message": None,
             "started_at_utc": "2026-09-20T12:00:00Z",
-            "finished_at_utc": "2026-09-20T12:05:00Z",
+            "finished_at_utc": None,
         }
     finally:
         # The generated run ID and repository name keep cleanup isolated.
@@ -387,10 +391,13 @@ def test_tracked_full_load_uses_stored_watermark_for_incremental_bronze_load(
             clock=Mock(side_effect=[started_at, finished_at]),
         )
 
-        assert result == BronzeIngestionResult(
-            records_extracted=1,
-            batches_written=1,
-            candidate_watermark=expected_candidate_watermark,
+        assert result == TrackedLoadResult(
+            run_id=run_id,
+            ingestion=BronzeIngestionResult(
+                records_extracted=1,
+                batches_written=1,
+                candidate_watermark=expected_candidate_watermark,
+            ),
         )
         client.iter_issues.assert_called_once_with(
             owner="pytest",
@@ -525,7 +532,7 @@ def test_tracked_full_load_uses_stored_watermark_for_incremental_bronze_load(
         ]
         assert [row.asDict() for row in pipeline_run_rows] == [
             {
-                "status": "succeeded",
+                "status": "running",
                 "watermark_before_value_utc": "2026-09-20T12:00:00Z",
                 "watermark_before_overlap_seconds": 300,
                 "candidate_watermark_value_utc": "2026-09-20T12:03:00Z",

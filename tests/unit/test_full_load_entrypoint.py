@@ -15,6 +15,9 @@ from github_engineering_analytics.orchestration.entrypoint import (
     main,
     resolve_github_token,
 )
+from github_engineering_analytics.orchestration.tracked_load import (
+    TrackedLoadResult,
+)
 
 
 @pytest.mark.parametrize("github_token", ["test-token", None])
@@ -173,9 +176,12 @@ def test_main_builds_spark_and_runs_full_load_from_environment(
         repository="engineering-analytics",
         github_token=None,
     )
-    expected_result = BronzeIngestionResult(
-        records_extracted=3,
-        batches_written=1,
+    expected_result = TrackedLoadResult(
+        run_id="run-123",
+        ingestion=BronzeIngestionResult(
+            records_extracted=3,
+            batches_written=1,
+        ),
     )
 
     get_or_create = mocker.patch(
@@ -215,9 +221,12 @@ def test_main_accepts_named_job_parameters(
         github_token_secret_scope="github-secrets",
         github_token_secret_key="api-token",
     )
-    expected_result = BronzeIngestionResult(
-        records_extracted=3,
-        batches_written=1,
+    expected_result = TrackedLoadResult(
+        run_id="run-123",
+        ingestion=BronzeIngestionResult(
+            records_extracted=3,
+            batches_written=1,
+        ),
     )
 
     mocker.patch(
@@ -409,9 +418,12 @@ def test_main_resolves_secret_reference_before_running_full_load(
         github_token_secret_scope="github-secrets",
         github_token_secret_key="api-token",
     )
-    expected_result = BronzeIngestionResult(
-        records_extracted=3,
-        batches_written=1,
+    expected_result = TrackedLoadResult(
+        run_id="run-123",
+        ingestion=BronzeIngestionResult(
+            records_extracted=3,
+            batches_written=1,
+        ),
     )
 
     mocker.patch(

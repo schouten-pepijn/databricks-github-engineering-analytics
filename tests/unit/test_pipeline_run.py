@@ -142,6 +142,27 @@ def test_pipeline_run_succeeds_immutably() -> None:
     )
 
 
+def test_pipeline_run_records_candidate_without_completing_lifecycle() -> None:
+    """Bronze/Silver may publish a candidate before Gold makes it terminal."""
+    pipeline_run = PipelineRun(
+        run_id="run-123",
+        source_name="github",
+        entity_name="issues",
+        started_at=datetime(2026, 9, 19, 12, 0, tzinfo=UTC),
+        watermark_before=None,
+    )
+    candidate = Watermark(
+        value=datetime(2026, 9, 19, 12, 10, tzinfo=UTC),
+    )
+
+    pending_run = pipeline_run.with_candidate_watermark(candidate)
+
+    assert pipeline_run.candidate_watermark is None
+    assert pending_run.status is PipelineRunStatus.RUNNING
+    assert pending_run.candidate_watermark == candidate
+    assert pending_run.finished_at is None
+
+
 def test_pipeline_run_fails_with_error_message() -> None:
     pipeline_run = PipelineRun(
         run_id="run-123",

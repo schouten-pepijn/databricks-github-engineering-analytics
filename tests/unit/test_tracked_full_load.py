@@ -9,6 +9,7 @@ from github_engineering_analytics.common.config import PipelineConfig
 from github_engineering_analytics.control.pipeline_run import PipelineRunStatus
 from github_engineering_analytics.control.watermark import Watermark
 from github_engineering_analytics.orchestration.tracked_load import (
+    TrackedLoadResult,
     run_tracked_full_load,
 )
 
@@ -95,7 +96,7 @@ def test_run_tracked_full_load_records_silver_failure_and_reraises(
     assert failed_run.error_message == "Silver merge failed"
 
 
-def test_run_tracked_full_load_records_a_successful_lifecycle(
+def test_run_tracked_full_load_persists_a_pending_lifecycle_handoff(
     mocker,
     no_watermark_repository: Mock,
 ) -> None:
@@ -110,7 +111,6 @@ def test_run_tracked_full_load_records_a_successful_lifecycle(
         ),
     )
     started_at = datetime(2026, 9, 20, 12, 0, tzinfo=UTC)
-    finished_at = datetime(2026, 9, 20, 12, 5, tzinfo=UTC)
     expected_run_id = "12345678123456781234567812345678"
 
     repository_constructor = mocker.patch(
@@ -149,10 +149,13 @@ def test_run_tracked_full_load_records_a_successful_lifecycle(
         repository="requests",
         github_token="test-token",
         run_id_factory=lambda: UUID("12345678-1234-5678-1234-567812345678"),
-        clock=Mock(side_effect=[started_at, finished_at]),
+        clock=Mock(return_value=started_at),
     )
 
-    assert actual_result is result
+    assert actual_result == TrackedLoadResult(
+        run_id=expected_run_id,
+        ingestion=result,
+    )
     repository_constructor.assert_called_once_with(
         spark=spark,
         config=PipelineConfig(catalog="test_catalog"),
@@ -160,7 +163,7 @@ def test_run_tracked_full_load_records_a_successful_lifecycle(
     repository.ensure_table.assert_called_once_with()
 
     started_run = repository.record_started.call_args.args[0]
-    finished_run = repository.record_finished.call_args.args[0]
+    pending_run = repository.record_candidate.call_args.args[0]
 
     assert started_run.run_id == expected_run_id
     assert started_run.source_name == "github"
@@ -169,10 +172,10 @@ def test_run_tracked_full_load_records_a_successful_lifecycle(
     assert started_run.started_at == started_at
     assert started_run.watermark_before is None
 
-    assert finished_run.run_id == started_run.run_id
-    assert finished_run.status is PipelineRunStatus.SUCCEEDED
-    assert finished_run.finished_at == finished_at
-    assert finished_run.candidate_watermark == Watermark(
+    assert pending_run.run_id == started_run.run_id
+    assert pending_run.status is PipelineRunStatus.RUNNING
+    assert pending_run.finished_at is None
+    assert pending_run.candidate_watermark == Watermark(
         value=datetime(2026, 9, 20, 12, 3, tzinfo=UTC),
         overlap_seconds=300,
     )
@@ -208,6 +211,8 @@ def test_run_tracked_full_load_records_a_successful_lifecycle(
             bronze_run_id=expected_run_id,
         ),
     ]
+
+    repository.record_finished.assert_not_called()
 
 
 def test_run_tracked_full_load_records_users_silver_failure_and_reraises(
@@ -486,10 +491,12 @@ def test_run_tracked_full_load_records_no_candidate_for_empty_extraction(
         clock=Mock(side_effect=[started_at, finished_at]),
     )
 
-    finished_run = repository.record_finished.call_args.args[0]
+    pending_run = repository.record_candidate.call_args.args[0]
 
-    assert finished_run.status is PipelineRunStatus.SUCCEEDED
-    assert finished_run.candidate_watermark is None
+    assert pending_run.status is PipelineRunStatus.RUNNING
+    assert pending_run.candidate_watermark is None
+    assert pending_run.finished_at is None
+    repository.record_finished.assert_not_called()
     issues_silver_load.assert_called_once()
     users_silver_load.assert_called_once()
     labels_silver_load.assert_called_once()
