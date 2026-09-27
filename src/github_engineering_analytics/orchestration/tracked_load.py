@@ -1,4 +1,9 @@
-"""Coordinate one tracked GitHub Issues Bronze-to-Silver lifecycle."""
+"""Coordinate the provisional tracked GitHub Issues Bronze-to-Silver stage.
+
+Gold finalization is deliberately outside this module's current boundary. A
+later orchestration step must commit the candidate watermark only after every
+required Gold model succeeds.
+"""
 
 from __future__ import annotations
 
@@ -35,7 +40,7 @@ from github_engineering_analytics.silver.users_full_load import (
 
 
 def _current_utc_time() -> datetime:
-    """Return the current timezone-aware UTC timestamp for a pipeline run."""
+    """Return the current UTC timestamp; tests inject a deterministic clock."""
     return datetime.now(UTC)
 
 
@@ -49,14 +54,16 @@ def run_tracked_full_load(
     run_id_factory: Callable[[], UUID] = uuid4,
     clock: Callable[[], datetime] = _current_utc_time,
 ) -> BronzeIngestionResult:
-    """Run and record one full-or-incremental Bronze-to-Silver lifecycle.
+    """Run and record one provisional full-or-incremental Bronze-to-Silver stage.
 
     A missing committed watermark selects a full extraction; an existing one
     selects the overlap-aware incremental route. The run succeeds only after
     Bronze, Issues Silver, Users Silver, Labels Silver, and Issue-Label Silver
-    complete. This boundary records the candidate watermark but deliberately
-    does not commit it while required Gold processing is still absent. A stage
-    failure is recorded as FAILED before the original exception is re-raised.
+    complete. This temporary lifecycle boundary records a candidate watermark
+    but deliberately does not commit it while Gold processing is still absent.
+    Its ``SUCCEEDED`` state therefore describes the completed Bronze-to-Silver
+    stage, not a final end-to-end pipeline result. A stage failure is recorded
+    as ``FAILED`` before the original exception is re-raised.
     """
     config = PipelineConfig(catalog=catalog)
     # Control tables must exist before creating the RUNNING record; otherwise a
@@ -143,8 +150,9 @@ def run_tracked_full_load(
             )
         raise
 
-    # A candidate watermark is recorded for observability, but Gold remains a
-    # required downstream stage before a later lifecycle boundary may commit it.
+    # A candidate watermark supports observability and the later Gold finalizer.
+    # It is not committed here: every required downstream Gold model must first
+    # complete successfully.
     pipeline_runs.record_finished(
         started_run.succeed(
             candidate_watermark=result.candidate_watermark,
