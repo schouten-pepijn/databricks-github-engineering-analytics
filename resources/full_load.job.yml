@@ -1,15 +1,21 @@
 resources:
   jobs:
     github_issues_full_load:
-      name: GitHub Issues full Bronze load
-      description: Extract GitHub Issues and refresh the scoped Silver entities
+      name: GitHub Issues Bronze-to-Gold load
+      description: >-
+        Extract GitHub Issues, reconcile Silver, build and test Gold, then
+        finalize the watermark only when the complete pipeline succeeds.
+
+      # A source watermark makes overlapping concurrent runs unsafe: either run
+      # could derive its candidate from stale control state.
+      max_concurrent_runs: 1
 
       tasks:
-        - task_key: full_load
-          environment_key: default
+        - task_key: bronze_silver
+          environment_key: python
 
-          # Bronze writes are currently append-only. Do not let serverless
-          # automatically replay a partially completed task.
+          # Bronze writes are append-only. Do not let serverless automatically
+          # replay a partially completed task.
           max_retries: 0
           disable_auto_optimization: true
 
@@ -22,10 +28,68 @@ resources:
               repository: ${var.github_repository}
               token-secret-scope: ${var.github_token_secret_scope}
               token-secret-key: ${var.github_token_secret_key}
+              # This run ID is available to every task in this job. It avoids
+              # notebook-only task-value APIs while identifying one lifecycle.
+              run-id: "{{job.run_id}}"
+
+        - task_key: build_gold
+          environment_key: dbt
+          depends_on:
+            - task_key: bronze_silver
+
+          dbt_task:
+            source: WORKSPACE
+            project_directory: ${workspace.file_path}/dbt
+            warehouse_id: ${var.sql_warehouse_id}
+            catalog: ${var.catalog}
+            schema: github_analytics_gold
+            commands:
+              # Gold must never consume an invalid Python-owned Silver contract.
+              - dbt test --select source:silver
+              - dbt build --select tag:gold
+
+        - task_key: finalize_success
+          environment_key: python
+          depends_on:
+            - task_key: build_gold
+
+          python_wheel_task:
+            package_name: github_engineering_analytics
+            entry_point: github-engineering-analytics-finalize-success
+            named_parameters:
+              catalog: ${var.catalog}
+              run-id: "{{job.run_id}}"
+
+        - task_key: finalize_failure
+          environment_key: python
+          depends_on:
+            - task_key: bronze_silver
+            - task_key: build_gold
+          run_if: AT_LEAST_ONE_FAILED
+
+          python_wheel_task:
+            package_name: github_engineering_analytics
+            entry_point: github-engineering-analytics-finalize-failure
+            named_parameters:
+              catalog: ${var.catalog}
+              run-id: "{{job.run_id}}"
+              # The detailed error remains in the failed upstream task output;
+              # pipeline_runs records the durable cross-stage failure outcome.
+              failure-reason: >-
+                An upstream Bronze, Silver, or Gold task failed. Inspect the
+                Databricks job task output for the detailed failure.
 
       environments:
-        - environment_key: default
+        - environment_key: python
           spec:
             environment_version: "3"
             dependencies:
               - ../dist/*.whl
+
+        - environment_key: dbt
+          spec:
+            environment_version: "3"
+            # Serverless dbt dependencies belong to the environment, not the
+            # task-level libraries field.
+            dependencies:
+              - dbt-databricks==1.12.3
