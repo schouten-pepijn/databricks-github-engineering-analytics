@@ -7,7 +7,8 @@ from datetime import datetime
 from typing import ClassVar, Self
 
 import pyspark.sql.functions as F
-from pyspark.sql import DataFrame, Window
+from delta.tables import DeltaTable
+from pyspark.sql import Column, DataFrame, SparkSession, Window
 from pyspark.sql.types import (
     ArrayType,
     BooleanType,
@@ -17,6 +18,15 @@ from pyspark.sql.types import (
     StructType,
 )
 
+from github_engineering_analytics.common.config import PipelineConfig
+from github_engineering_analytics.common.delta_contracts import (
+    quote_multipart_identifier,
+    require_utc_spark_session,
+)
+from github_engineering_analytics.silver.contracts import (
+    require_required_columns,
+    require_unique_dataframe_keys,
+)
 from github_engineering_analytics.silver.labels import SilverLabel
 
 
@@ -90,6 +100,305 @@ class SilverIssueLabelTransformation:
 
     observed_issues: DataFrame
     relationships: DataFrame
+
+
+class DeltaSilverIssueLabelWriter:
+    """Persist current Issue-to-Label relationships at Silver grain.
+
+    One row means one Label currently belongs to one Issue. This relation is
+    the future source for Gold ``bridge_issue_label``.
+    """
+
+    _RELATIONSHIP_COLUMNS: ClassVar[tuple[str, ...]] = (
+        "repository_owner",
+        "repository_name",
+        "issue_id",
+        "label_id",
+        "observed_at",
+        "source_run_id",
+    )
+
+    _OBSERVED_ISSUE_COLUMNS: ClassVar[tuple[str, ...]] = (
+        "repository_owner",
+        "repository_name",
+        "issue_id",
+        "observed_at",
+        "source_run_id",
+    )
+
+    _OBSERVED_ISSUE_KEY: ClassVar[tuple[str, ...]] = (
+        "repository_owner",
+        "repository_name",
+        "issue_id",
+    )
+
+    _RELATIONSHIP_KEY: ClassVar[tuple[str, ...]] = (
+        "repository_owner",
+        "repository_name",
+        "issue_id",
+        "label_id",
+    )
+
+    def __init__(
+        self,
+        spark: SparkSession,
+        config: PipelineConfig,
+    ) -> None:
+        """Bind the writer to one Spark session and Silver relation table."""
+        self._spark = spark
+        self._schema_name = f"{config.catalog}.{config.silver_schema}"
+        self._table_name = config.silver_issue_labels_table
+
+    def ensure_table(self) -> None:
+        """Create the current-state Issue-to-Label Delta table when absent."""
+        require_utc_spark_session(
+            self._spark,
+            operation="writing Silver Issue-to-Label relationships",
+        )
+
+        self._spark.sql(
+            "CREATE SCHEMA IF NOT EXISTS "
+            f"{quote_multipart_identifier(self._schema_name)}"
+        )
+
+        self._spark.sql(
+            "CREATE TABLE IF NOT EXISTS "
+            f"{quote_multipart_identifier(self._table_name)} ("
+            "repository_owner STRING NOT NULL, "
+            "repository_name STRING NOT NULL, "
+            "issue_id BIGINT NOT NULL, "
+            "label_id BIGINT NOT NULL, "
+            "observed_at TIMESTAMP NOT NULL, "
+            "source_run_id STRING NOT NULL"
+            ") USING DELTA"
+        )
+
+    def reconcile_dataframe(
+        self,
+        *,
+        observed_issues: DataFrame,
+        relationships: DataFrame,
+    ) -> None:
+        """Atomically align stored relationships with one observed Issue scope.
+
+        ``observed_issues`` may contain an Issue with no relationship rows. That
+        explicit empty-label snapshot authorizes removal of its stale target
+        relationships; it must therefore be reconciled alongside the current
+        relationship rows rather than inferred from them.
+        """
+        require_utc_spark_session(
+            self._spark,
+            operation="writing Silver Issue-to-Label relationships",
+        )
+        require_required_columns(
+            observed_issues,
+            required_columns=self._OBSERVED_ISSUE_COLUMNS,
+            source_name="Observed Issue source",
+        )
+        require_required_columns(
+            relationships,
+            required_columns=self._RELATIONSHIP_COLUMNS,
+            source_name="Issue-to-Label relationship source",
+        )
+        require_unique_dataframe_keys(
+            observed_issues,
+            key_columns=self._OBSERVED_ISSUE_KEY,
+            error_message="Observed Issue source contains duplicate business keys",
+        )
+        require_unique_dataframe_keys(
+            relationships,
+            key_columns=self._RELATIONSHIP_KEY,
+            error_message=(
+                "Issue-to-Label relationship source contains duplicate business keys"
+            ),
+        )
+        self._require_relationships_match_observed_issues(
+            observed_issues=observed_issues,
+            relationships=relationships,
+        )
+
+        # Represent the new current state as upserts. Deletes are added below
+        # and committed in the same Delta MERGE transaction.
+        upserts = relationships.select(
+            *self._RELATIONSHIP_COLUMNS,
+            F.lit("upsert").alias("_operation"),
+        )
+        deletes = self._build_delete_source(
+            observed_issues=observed_issues,
+            relationships=relationships,
+        )
+        # The two sources are mutually exclusive per relationship business key:
+        # a current relationship is never also eligible for deletion.
+        self._merge_reconciliation_source(upserts.unionByName(deletes))
+
+    def _require_relationships_match_observed_issues(
+        self,
+        *,
+        observed_issues: DataFrame,
+        relationships: DataFrame,
+    ) -> None:
+        """Reject relationships outside their declared Issue reconciliation scope.
+
+        A relationship must inherit both the observation timestamp and source
+        run ID of its Issue snapshot. Otherwise an unrelated observation could
+        update or delete the wrong current-state relationships.
+        """
+        invalid_relationships = (
+            relationships.alias("relationship")
+            .join(
+                observed_issues.alias("observed"),
+                self._issue_key_join_condition(
+                    left_alias="relationship",
+                    right_alias="observed",
+                ),
+                "left",
+            )
+            .where(
+                F.col("observed.issue_id").isNull()
+                | (F.col("relationship.observed_at") != F.col("observed.observed_at"))
+                | (
+                    F.col("relationship.source_run_id")
+                    != F.col("observed.source_run_id")
+                )
+            )
+            .limit(1)
+            .collect()
+        )
+
+        if invalid_relationships:
+            raise ValueError(
+                "Issue-to-Label relationships must match one observed Issue snapshot"
+            )
+
+    def _build_delete_source(
+        self,
+        *,
+        observed_issues: DataFrame,
+        relationships: DataFrame,
+    ) -> DataFrame:
+        """Return stale target rows that this observed Issue scope may delete.
+
+        Only target rows for observed Issues are considered. An old Bronze
+        replay may update neither a newer relationship nor delete it.
+        """
+        scoped_target_rows = (
+            self._spark.table(self._table_name)
+            .alias("target")
+            .join(
+                observed_issues.alias("observed"),
+                self._issue_key_join_condition(
+                    left_alias="target",
+                    right_alias="observed",
+                ),
+                "inner",
+            )
+            # A replay may delete only rows no newer than its observation.
+            .where(F.col("target.observed_at") <= F.col("observed.observed_at"))
+            .select(
+                F.col("target.repository_owner").alias("repository_owner"),
+                F.col("target.repository_name").alias("repository_name"),
+                F.col("target.issue_id").alias("issue_id"),
+                F.col("target.label_id").alias("label_id"),
+                F.col("observed.observed_at").alias("observed_at"),
+                F.col("observed.source_run_id").alias("source_run_id"),
+            )
+        )
+
+        # An Issue can deliberately have no labels. In that case this empty
+        # source leaves every scoped target relationship eligible for deletion.
+        current_relationship_keys = relationships.select(
+            *self._RELATIONSHIP_KEY,
+        )
+
+        stale_relationships = scoped_target_rows.alias("target").join(
+            current_relationship_keys.alias("relationship"),
+            (
+                (
+                    F.col("target.repository_owner")
+                    == F.col("relationship.repository_owner")
+                )
+                & (
+                    F.col("target.repository_name")
+                    == F.col("relationship.repository_name")
+                )
+                & (F.col("target.issue_id") == F.col("relationship.issue_id"))
+                & (F.col("target.label_id") == F.col("relationship.label_id"))
+            ),
+            "left_anti",
+        )
+
+        return stale_relationships.select(
+            *self._RELATIONSHIP_COLUMNS,
+            F.lit("delete").alias("_operation"),
+        )
+
+    def _merge_reconciliation_source(
+        self,
+        source: DataFrame,
+    ) -> None:
+        """Apply relationship additions, updates and scoped removals atomically.
+
+        Delta's one transaction ensures a failed reconciliation cannot leave
+        an Issue with its old relationships deleted but its new ones absent.
+        """
+        target = DeltaTable.forName(self._spark, self._table_name)
+
+        (
+            target.alias("target")
+            .merge(
+                source.alias("source"),
+                (
+                    "target.repository_owner = source.repository_owner "
+                    "AND target.repository_name = source.repository_name "
+                    "AND target.issue_id = source.issue_id "
+                    "AND target.label_id = source.label_id"
+                ),
+            )
+            .whenMatchedDelete(
+                condition="source._operation = 'delete'",
+            )
+            .whenMatchedUpdate(
+                condition=(
+                    "source._operation = 'upsert' "
+                    "AND source.observed_at >= target.observed_at"
+                ),
+                set={
+                    "observed_at": "source.observed_at",
+                    "source_run_id": "source.source_run_id",
+                },
+            )
+            .whenNotMatchedInsert(
+                condition="source._operation = 'upsert'",
+                values={
+                    "repository_owner": "source.repository_owner",
+                    "repository_name": "source.repository_name",
+                    "issue_id": "source.issue_id",
+                    "label_id": "source.label_id",
+                    "observed_at": "source.observed_at",
+                    "source_run_id": "source.source_run_id",
+                },
+            )
+            .execute()
+        )
+
+    @staticmethod
+    def _issue_key_join_condition(
+        *,
+        left_alias: str,
+        right_alias: str,
+    ) -> Column:
+        """Build one repository-scoped Issue key join condition."""
+        return (
+            (
+                F.col(f"{left_alias}.repository_owner")
+                == F.col(f"{right_alias}.repository_owner")
+            )
+            & (
+                F.col(f"{left_alias}.repository_name")
+                == F.col(f"{right_alias}.repository_name")
+            )
+            & (F.col(f"{left_alias}.issue_id") == F.col(f"{right_alias}.issue_id"))
+        )
 
 
 class BronzeIssueToSilverLabelTransformer:
@@ -172,6 +481,8 @@ class BronzeIssueToSilverLabelTransformer:
             self._normalize_relationship_rows(issue_snapshots)
         )
 
+        # Bronze is append-only, so choose one deterministic latest snapshot
+        # before deciding which label relationships are currently true.
         latest_issue_window = Window.partitionBy(
             "repository_owner",
             "repository_name",
@@ -193,6 +504,8 @@ class BronzeIssueToSilverLabelTransformer:
             .drop("_row_number")
         )
 
+        # Keep the latest Issue even when its labels array is empty. The writer
+        # needs this scope to remove any previously stored label associations.
         observed_issues = latest_issues.select(
             "repository_owner",
             "repository_name",
@@ -201,6 +514,7 @@ class BronzeIssueToSilverLabelTransformer:
             "source_run_id",
         )
 
+        # Only non-empty label arrays produce persisted bridge-source rows.
         relationships = self._normalize_relationship_rows(latest_issues).select(
             "repository_owner",
             "repository_name",
