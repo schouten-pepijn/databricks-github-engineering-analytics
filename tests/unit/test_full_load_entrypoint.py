@@ -207,6 +207,7 @@ def test_main_builds_spark_and_runs_full_load_from_environment(
         owner="octo-org",
         repository="engineering-analytics",
         github_token=None,
+        run_id=None,
     )
 
 
@@ -252,6 +253,7 @@ def test_main_accepts_named_job_parameters(
         repository="engineering-analytics",
         token_secret_scope="github-secrets",
         token_secret_key="api-token",
+        run_id="job-run-123",
     )
 
     settings_from_environment.assert_called_once_with(
@@ -273,6 +275,7 @@ def test_main_accepts_named_job_parameters(
         owner="octo-org",
         repository="engineering-analytics",
         github_token="resolved-token",
+        run_id="job-run-123",
     )
 
 
@@ -289,6 +292,7 @@ def test_cli_passes_databricks_named_parameters_to_main(mocker) -> None:
             "--repository=requests",
             "--token-secret-scope=github-engineering-analytics",
             "--token-secret-key=github-token",
+            "--run-id=job-run-123",
         ],
     )
 
@@ -299,6 +303,7 @@ def test_cli_passes_databricks_named_parameters_to_main(mocker) -> None:
         repository="requests",
         token_secret_scope="github-engineering-analytics",
         token_secret_key="github-token",
+        run_id="job-run-123",
     )
 
 
@@ -313,6 +318,7 @@ def test_cli_help_lists_the_databricks_wheel_options() -> None:
         "--repository",
         "--token-secret-scope",
         "--token-secret-key",
+        "--run-id",
     ):
         assert option in result.output
 
@@ -455,6 +461,7 @@ def test_main_resolves_secret_reference_before_running_full_load(
         owner="octo-org",
         repository="engineering-analytics",
         github_token="resolved-token",
+        run_id=None,
     )
 
 

@@ -281,6 +281,47 @@ def test_record_candidate_updates_only_candidate_on_running_row(
 
 
 @patch("github_engineering_analytics.control.pipeline_run_repository.F")
+def test_get_rebuilds_a_running_run_with_utc_watermarks(functions: Mock) -> None:
+    spark, repository = make_repository()
+    functions.col.return_value = Mock()
+    row = Mock()
+    row.asDict.return_value = {
+        "run_id": "run-123",
+        "source_name": "github",
+        "entity_name": "issues",
+        "status": "running",
+        "started_at": datetime(2026, 9, 19, 12, 0),
+        "finished_at": None,
+        "watermark_before_value": datetime(2026, 9, 19, 11, 55),
+        "watermark_before_overlap_seconds": 300,
+        "candidate_watermark_value": datetime(2026, 9, 19, 12, 3),
+        "candidate_watermark_overlap_seconds": 300,
+        "error_message": None,
+    }
+    query = spark.table.return_value.where.return_value.limit.return_value
+    query.collect.return_value = [row]
+
+    run = repository.get("run-123")
+
+    assert run.run_id == "run-123"
+    assert run.status.value == "running"
+    assert run.started_at == datetime(2026, 9, 19, 12, 0, tzinfo=UTC)
+    assert run.candidate_watermark == Watermark(
+        value=datetime(2026, 9, 19, 12, 3, tzinfo=UTC),
+        overlap_seconds=300,
+    )
+
+
+def test_get_rejects_blank_run_id_before_reading_table() -> None:
+    spark, repository = make_repository()
+
+    with pytest.raises(ValueError, match="run_id must not be empty"):
+        repository.get(" ")
+
+    spark.table.assert_not_called()
+
+
+@patch("github_engineering_analytics.control.pipeline_run_repository.F")
 @patch("github_engineering_analytics.control.pipeline_run_repository.DeltaTable")
 def test_record_finished_updates_running_row_to_succeeded(
     delta_table: Mock,
