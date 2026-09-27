@@ -1,12 +1,12 @@
-import sys
 from unittest.mock import Mock, call
 
 import pytest
+from typer.testing import CliRunner
 
 from github_engineering_analytics.common.catalog_reset import (
     CatalogResetResult,
     _require_confirmed_catalog,
-    cli,
+    app,
     main,
     reset_catalog,
 )
@@ -164,11 +164,9 @@ def test_cli_passes_the_dev_environment_variable_pair_to_main(mocker) -> None:
     reset_main = mocker.patch(
         "github_engineering_analytics.common.catalog_reset.main",
     )
-    mocker.patch.object(
-        sys,
-        "argv",
+    result = CliRunner().invoke(
+        app,
         [
-            "catalog_reset",
             "--catalog-environment-variable",
             "DATABRICKS_DEV_CATALOG",
             "--confirmation-environment-variable",
@@ -176,8 +174,7 @@ def test_cli_passes_the_dev_environment_variable_pair_to_main(mocker) -> None:
         ],
     )
 
-    cli()
-
+    assert result.exit_code == 0
     reset_main.assert_called_once_with(
         catalog_environment_variable="DATABRICKS_DEV_CATALOG",
         confirmation_environment_variable="CONFIRM_DEV_CATALOG_RESET",

@@ -11,12 +11,14 @@ import pytest
 from delta.tables import DeltaTable
 from pyspark.sql import SparkSession
 
-from github_engineering_analytics.bronze.full_load import run_tracked_full_load
 from github_engineering_analytics.bronze.ingestion import BronzeIngestionResult
 from github_engineering_analytics.common.config import PipelineConfig
 from github_engineering_analytics.control.watermark import Watermark
 from github_engineering_analytics.control.watermark_repository import (
     DeltaWatermarkRepository,
+)
+from github_engineering_analytics.orchestration.tracked_load import (
+    run_tracked_full_load,
 )
 
 pytestmark = pytest.mark.integration
@@ -598,7 +600,7 @@ def test_tracked_full_load_persists_silver_failure_and_bronze_rows(
 
     silver_failure = RuntimeError("Silver processing failed")
     silver_load = mocker.patch(
-        "github_engineering_analytics.bronze.full_load.run_bronze_to_silver",
+        "github_engineering_analytics.orchestration.tracked_load.run_bronze_to_silver",
         side_effect=silver_failure,
     )
 

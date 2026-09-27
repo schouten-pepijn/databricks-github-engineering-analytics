@@ -3,16 +3,17 @@ from datetime import UTC, datetime
 from unittest.mock import Mock
 
 import pytest
+from typer.testing import CliRunner
 
-from github_engineering_analytics.bronze.full_load import (
-    FullLoadSettings,
-    cli,
-    main,
-    resolve_github_token,
-    run_full_load,
-)
+from github_engineering_analytics.bronze.full_load import run_full_load
 from github_engineering_analytics.bronze.ingestion import BronzeIngestionResult
 from github_engineering_analytics.common.config import PipelineConfig
+from github_engineering_analytics.orchestration.entrypoint import (
+    FullLoadSettings,
+    app,
+    main,
+    resolve_github_token,
+)
 
 
 @pytest.mark.parametrize("github_token", ["test-token", None])
@@ -177,15 +178,15 @@ def test_main_builds_spark_and_runs_full_load_from_environment(
     )
 
     get_or_create = mocker.patch(
-        "github_engineering_analytics.bronze.full_load._get_or_create_spark",
+        "github_engineering_analytics.orchestration.entrypoint._get_or_create_spark",
         return_value=spark,
     )
     settings_from_environment = mocker.patch(
-        "github_engineering_analytics.bronze.full_load.FullLoadSettings.from_environment",
+        "github_engineering_analytics.orchestration.entrypoint.FullLoadSettings.from_environment",
         return_value=settings,
     )
     full_load = mocker.patch(
-        "github_engineering_analytics.bronze.full_load.run_tracked_full_load",
+        "github_engineering_analytics.orchestration.entrypoint.run_tracked_full_load",
         return_value=expected_result,
     )
 
@@ -219,19 +220,19 @@ def test_main_accepts_named_job_parameters(
     )
 
     mocker.patch(
-        "github_engineering_analytics.bronze.full_load._get_or_create_spark",
+        "github_engineering_analytics.orchestration.entrypoint._get_or_create_spark",
         return_value=spark,
     )
     settings_from_environment = mocker.patch(
-        "github_engineering_analytics.bronze.full_load.FullLoadSettings.from_environment",
+        "github_engineering_analytics.orchestration.entrypoint.FullLoadSettings.from_environment",
         return_value=settings,
     )
     resolve_token = mocker.patch(
-        "github_engineering_analytics.bronze.full_load.resolve_github_token",
+        "github_engineering_analytics.orchestration.entrypoint.resolve_github_token",
         return_value="resolved-token",
     )
     full_load = mocker.patch(
-        "github_engineering_analytics.bronze.full_load.run_tracked_full_load",
+        "github_engineering_analytics.orchestration.entrypoint.run_tracked_full_load",
         return_value=expected_result,
     )
 
@@ -266,10 +267,13 @@ def test_main_accepts_named_job_parameters(
 
 
 def test_cli_passes_databricks_named_parameters_to_main(mocker) -> None:
-    mocker.patch(
-        "sys.argv",
+    run_main = mocker.patch(
+        "github_engineering_analytics.orchestration.entrypoint.main"
+    )
+
+    result = CliRunner().invoke(
+        app,
         [
-            "github-engineering-analytics-full-load",
             "--catalog=test_catalog",
             "--owner=psf",
             "--repository=requests",
@@ -277,10 +281,8 @@ def test_cli_passes_databricks_named_parameters_to_main(mocker) -> None:
             "--token-secret-key=github-token",
         ],
     )
-    run_main = mocker.patch("github_engineering_analytics.bronze.full_load.main")
 
-    cli()
-
+    assert result.exit_code == 0
     run_main.assert_called_once_with(
         catalog="test_catalog",
         owner="psf",
@@ -288,6 +290,21 @@ def test_cli_passes_databricks_named_parameters_to_main(mocker) -> None:
         token_secret_scope="github-engineering-analytics",
         token_secret_key="github-token",
     )
+
+
+def test_cli_help_lists_the_databricks_wheel_options() -> None:
+    """Keep the generated Typer interface compatible with the bundle task."""
+    result = CliRunner().invoke(app, ["--help"])
+
+    assert result.exit_code == 0
+    for option in (
+        "--catalog",
+        "--owner",
+        "--repository",
+        "--token-secret-scope",
+        "--token-secret-key",
+    ):
+        assert option in result.output
 
 
 def test_resolve_github_token_returns_direct_token_without_reading_secret() -> None:
@@ -386,19 +403,19 @@ def test_main_resolves_secret_reference_before_running_full_load(
     )
 
     mocker.patch(
-        "github_engineering_analytics.bronze.full_load._get_or_create_spark",
+        "github_engineering_analytics.orchestration.entrypoint._get_or_create_spark",
         return_value=spark,
     )
     mocker.patch(
-        "github_engineering_analytics.bronze.full_load.FullLoadSettings.from_environment",
+        "github_engineering_analytics.orchestration.entrypoint.FullLoadSettings.from_environment",
         return_value=settings,
     )
     resolve_token = mocker.patch(
-        "github_engineering_analytics.bronze.full_load.resolve_github_token",
+        "github_engineering_analytics.orchestration.entrypoint.resolve_github_token",
         return_value="resolved-token",
     )
     full_load = mocker.patch(
-        "github_engineering_analytics.bronze.full_load.run_tracked_full_load",
+        "github_engineering_analytics.orchestration.entrypoint.run_tracked_full_load",
         return_value=expected_result,
     )
 

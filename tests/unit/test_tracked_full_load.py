@@ -4,11 +4,13 @@ from uuid import UUID
 
 import pytest
 
-from github_engineering_analytics.bronze.full_load import run_tracked_full_load
 from github_engineering_analytics.bronze.ingestion import BronzeIngestionResult
 from github_engineering_analytics.common.config import PipelineConfig
 from github_engineering_analytics.control.pipeline_run import PipelineRunStatus
 from github_engineering_analytics.control.watermark import Watermark
+from github_engineering_analytics.orchestration.tracked_load import (
+    run_tracked_full_load,
+)
 
 
 @pytest.fixture()
@@ -17,7 +19,7 @@ def no_watermark_repository(mocker) -> Mock:
     watermark_repository = Mock()
     watermark_repository.get.return_value = None
     mocker.patch(
-        "github_engineering_analytics.bronze.full_load.DeltaWatermarkRepository",
+        "github_engineering_analytics.orchestration.tracked_load.DeltaWatermarkRepository",
         return_value=watermark_repository,
     )
 
@@ -40,19 +42,19 @@ def test_run_tracked_full_load_records_silver_failure_and_reraises(
     expected_run_id = "12345678123456781234567812345678"
 
     mocker.patch(
-        "github_engineering_analytics.bronze.full_load.DeltaPipelineRunRepository",
+        "github_engineering_analytics.orchestration.tracked_load.DeltaPipelineRunRepository",
         return_value=repository,
     )
     bronze_load = mocker.patch(
-        "github_engineering_analytics.bronze.full_load.run_full_load",
+        "github_engineering_analytics.orchestration.tracked_load.run_full_load",
         return_value=result,
     )
     silver_load = mocker.patch(
-        "github_engineering_analytics.bronze.full_load.run_bronze_to_silver",
+        "github_engineering_analytics.orchestration.tracked_load.run_bronze_to_silver",
         side_effect=failure,
     )
     users_silver_load = mocker.patch(
-        "github_engineering_analytics.bronze.full_load.run_bronze_to_silver_users",
+        "github_engineering_analytics.orchestration.tracked_load.run_bronze_to_silver_users",
     )
 
     with pytest.raises(RuntimeError, match="Silver merge failed") as exc_info:
@@ -112,24 +114,24 @@ def test_run_tracked_full_load_records_a_successful_lifecycle(
     expected_run_id = "12345678123456781234567812345678"
 
     repository_constructor = mocker.patch(
-        "github_engineering_analytics.bronze.full_load.DeltaPipelineRunRepository",
+        "github_engineering_analytics.orchestration.tracked_load.DeltaPipelineRunRepository",
         return_value=repository,
     )
     bronze_load = mocker.patch(
-        "github_engineering_analytics.bronze.full_load.run_full_load",
+        "github_engineering_analytics.orchestration.tracked_load.run_full_load",
         return_value=result,
     )
     silver_load = mocker.patch(
-        "github_engineering_analytics.bronze.full_load.run_bronze_to_silver",
+        "github_engineering_analytics.orchestration.tracked_load.run_bronze_to_silver",
     )
     users_silver_load = mocker.patch(
-        "github_engineering_analytics.bronze.full_load.run_bronze_to_silver_users",
+        "github_engineering_analytics.orchestration.tracked_load.run_bronze_to_silver_users",
     )
     labels_silver_load = mocker.patch(
-        "github_engineering_analytics.bronze.full_load.run_bronze_to_silver_labels",
+        "github_engineering_analytics.orchestration.tracked_load.run_bronze_to_silver_labels",
     )
     issue_labels_silver_load = mocker.patch(
-        "github_engineering_analytics.bronze.full_load.run_bronze_to_silver_issue_labels",
+        "github_engineering_analytics.orchestration.tracked_load.run_bronze_to_silver_issue_labels",
     )
 
     # Attach all stages to one parent so the assertion also verifies ordering.
@@ -222,18 +224,18 @@ def test_run_tracked_full_load_records_users_silver_failure_and_reraises(
     expected_run_id = "12345678123456781234567812345678"
 
     mocker.patch(
-        "github_engineering_analytics.bronze.full_load.DeltaPipelineRunRepository",
+        "github_engineering_analytics.orchestration.tracked_load.DeltaPipelineRunRepository",
         return_value=repository,
     )
     mocker.patch(
-        "github_engineering_analytics.bronze.full_load.run_full_load",
+        "github_engineering_analytics.orchestration.tracked_load.run_full_load",
         return_value=result,
     )
     issues_silver_load = mocker.patch(
-        "github_engineering_analytics.bronze.full_load.run_bronze_to_silver",
+        "github_engineering_analytics.orchestration.tracked_load.run_bronze_to_silver",
     )
     users_silver_load = mocker.patch(
-        "github_engineering_analytics.bronze.full_load.run_bronze_to_silver_users",
+        "github_engineering_analytics.orchestration.tracked_load.run_bronze_to_silver_users",
         side_effect=failure,
     )
 
@@ -279,21 +281,21 @@ def test_run_tracked_full_load_records_labels_silver_failure_and_reraises(
     expected_run_id = "12345678123456781234567812345678"
 
     mocker.patch(
-        "github_engineering_analytics.bronze.full_load.DeltaPipelineRunRepository",
+        "github_engineering_analytics.orchestration.tracked_load.DeltaPipelineRunRepository",
         return_value=repository,
     )
     mocker.patch(
-        "github_engineering_analytics.bronze.full_load.run_full_load",
+        "github_engineering_analytics.orchestration.tracked_load.run_full_load",
         return_value=result,
     )
     issues_silver_load = mocker.patch(
-        "github_engineering_analytics.bronze.full_load.run_bronze_to_silver",
+        "github_engineering_analytics.orchestration.tracked_load.run_bronze_to_silver",
     )
     users_silver_load = mocker.patch(
-        "github_engineering_analytics.bronze.full_load.run_bronze_to_silver_users",
+        "github_engineering_analytics.orchestration.tracked_load.run_bronze_to_silver_users",
     )
     labels_silver_load = mocker.patch(
-        "github_engineering_analytics.bronze.full_load.run_bronze_to_silver_labels",
+        "github_engineering_analytics.orchestration.tracked_load.run_bronze_to_silver_labels",
         side_effect=failure,
     )
 
@@ -344,24 +346,24 @@ def test_run_tracked_full_load_records_issue_labels_silver_failure_and_reraises(
     expected_run_id = "12345678123456781234567812345678"
 
     mocker.patch(
-        "github_engineering_analytics.bronze.full_load.DeltaPipelineRunRepository",
+        "github_engineering_analytics.orchestration.tracked_load.DeltaPipelineRunRepository",
         return_value=repository,
     )
     mocker.patch(
-        "github_engineering_analytics.bronze.full_load.run_full_load",
+        "github_engineering_analytics.orchestration.tracked_load.run_full_load",
         return_value=result,
     )
     issues_silver_load = mocker.patch(
-        "github_engineering_analytics.bronze.full_load.run_bronze_to_silver",
+        "github_engineering_analytics.orchestration.tracked_load.run_bronze_to_silver",
     )
     users_silver_load = mocker.patch(
-        "github_engineering_analytics.bronze.full_load.run_bronze_to_silver_users",
+        "github_engineering_analytics.orchestration.tracked_load.run_bronze_to_silver_users",
     )
     labels_silver_load = mocker.patch(
-        "github_engineering_analytics.bronze.full_load.run_bronze_to_silver_labels",
+        "github_engineering_analytics.orchestration.tracked_load.run_bronze_to_silver_labels",
     )
     issue_labels_silver_load = mocker.patch(
-        "github_engineering_analytics.bronze.full_load.run_bronze_to_silver_issue_labels",
+        "github_engineering_analytics.orchestration.tracked_load.run_bronze_to_silver_issue_labels",
         side_effect=failure,
     )
 
@@ -407,18 +409,18 @@ def test_run_tracked_full_load_records_failure_and_reraises(
     failure = RuntimeError("GitHub request timed out")
 
     mocker.patch(
-        "github_engineering_analytics.bronze.full_load.DeltaPipelineRunRepository",
+        "github_engineering_analytics.orchestration.tracked_load.DeltaPipelineRunRepository",
         return_value=repository,
     )
     mocker.patch(
-        "github_engineering_analytics.bronze.full_load.run_full_load",
+        "github_engineering_analytics.orchestration.tracked_load.run_full_load",
         side_effect=failure,
     )
     issues_silver_load = mocker.patch(
-        "github_engineering_analytics.bronze.full_load.run_bronze_to_silver",
+        "github_engineering_analytics.orchestration.tracked_load.run_bronze_to_silver",
     )
     users_silver_load = mocker.patch(
-        "github_engineering_analytics.bronze.full_load.run_bronze_to_silver_users",
+        "github_engineering_analytics.orchestration.tracked_load.run_bronze_to_silver_users",
     )
 
     with pytest.raises(RuntimeError, match="GitHub request timed out") as exc_info:
@@ -451,11 +453,11 @@ def test_run_tracked_full_load_records_no_candidate_for_empty_extraction(
     finished_at = datetime(2026, 9, 20, 12, 5, tzinfo=UTC)
 
     mocker.patch(
-        "github_engineering_analytics.bronze.full_load.DeltaPipelineRunRepository",
+        "github_engineering_analytics.orchestration.tracked_load.DeltaPipelineRunRepository",
         return_value=repository,
     )
     mocker.patch(
-        "github_engineering_analytics.bronze.full_load.run_full_load",
+        "github_engineering_analytics.orchestration.tracked_load.run_full_load",
         return_value=BronzeIngestionResult(
             records_extracted=0,
             batches_written=0,
@@ -463,16 +465,16 @@ def test_run_tracked_full_load_records_no_candidate_for_empty_extraction(
         ),
     )
     issues_silver_load = mocker.patch(
-        "github_engineering_analytics.bronze.full_load.run_bronze_to_silver",
+        "github_engineering_analytics.orchestration.tracked_load.run_bronze_to_silver",
     )
     users_silver_load = mocker.patch(
-        "github_engineering_analytics.bronze.full_load.run_bronze_to_silver_users",
+        "github_engineering_analytics.orchestration.tracked_load.run_bronze_to_silver_users",
     )
     labels_silver_load = mocker.patch(
-        "github_engineering_analytics.bronze.full_load.run_bronze_to_silver_labels",
+        "github_engineering_analytics.orchestration.tracked_load.run_bronze_to_silver_labels",
     )
     issue_labels_silver_load = mocker.patch(
-        "github_engineering_analytics.bronze.full_load.run_bronze_to_silver_issue_labels",
+        "github_engineering_analytics.orchestration.tracked_load.run_bronze_to_silver_issue_labels",
     )
 
     run_tracked_full_load(
@@ -518,33 +520,33 @@ def test_run_tracked_full_load_uses_incremental_load_when_watermark_exists(
     )
 
     mocker.patch(
-        "github_engineering_analytics.bronze.full_load.DeltaPipelineRunRepository",
+        "github_engineering_analytics.orchestration.tracked_load.DeltaPipelineRunRepository",
         return_value=pipeline_run_repository,
     )
     mocker.patch(
-        "github_engineering_analytics.bronze.full_load.DeltaWatermarkRepository",
+        "github_engineering_analytics.orchestration.tracked_load.DeltaWatermarkRepository",
         return_value=watermark_repository,
     )
     watermark_repository.get.return_value = stored_watermark
 
     full_load = mocker.patch(
-        "github_engineering_analytics.bronze.full_load.run_full_load",
+        "github_engineering_analytics.orchestration.tracked_load.run_full_load",
     )
     incremental_load = mocker.patch(
-        "github_engineering_analytics.bronze.full_load.run_incremental_load",
+        "github_engineering_analytics.orchestration.tracked_load.run_incremental_load",
         return_value=result,
     )
     issues_silver_load = mocker.patch(
-        "github_engineering_analytics.bronze.full_load.run_bronze_to_silver",
+        "github_engineering_analytics.orchestration.tracked_load.run_bronze_to_silver",
     )
     users_silver_load = mocker.patch(
-        "github_engineering_analytics.bronze.full_load.run_bronze_to_silver_users",
+        "github_engineering_analytics.orchestration.tracked_load.run_bronze_to_silver_users",
     )
     labels_silver_load = mocker.patch(
-        "github_engineering_analytics.bronze.full_load.run_bronze_to_silver_labels",
+        "github_engineering_analytics.orchestration.tracked_load.run_bronze_to_silver_labels",
     )
     issue_labels_silver_load = mocker.patch(
-        "github_engineering_analytics.bronze.full_load.run_bronze_to_silver_issue_labels",
+        "github_engineering_analytics.orchestration.tracked_load.run_bronze_to_silver_issue_labels",
     )
 
     run_tracked_full_load(
