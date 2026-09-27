@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from typing import ClassVar
 
 import pyspark.sql.functions as F
@@ -24,6 +25,7 @@ from github_engineering_analytics.control.pipeline_run import (
     PipelineRun,
     PipelineRunStatus,
 )
+from github_engineering_analytics.control.watermark import Watermark
 
 
 class DeltaPipelineRunRepository:
@@ -235,6 +237,37 @@ class DeltaPipelineRunRepository:
             .execute()
         )
 
+    def get(self, run_id: str) -> PipelineRun:
+        """Return exactly one persisted run for finalization or diagnosis.
+
+        The control table is read in a UTC Spark session, so a naive timestamp
+        returned by PySpark represents a UTC clock value. Converting it here
+        keeps the pure :class:`PipelineRun` boundary timezone-aware.
+        """
+        if not run_id.strip():
+            raise ValueError("run_id must not be empty")
+
+        require_utc_spark_session(
+            self._spark,
+            operation="reading or writing pipeline runs",
+        )
+        rows = (
+            self._spark.table(self._table_name)
+            .where(F.col("run_id") == run_id)
+            .limit(2)
+            .collect()
+        )
+
+        if not rows:
+            raise ValueError(f"Pipeline run not found: run_id={run_id!r}")
+
+        if len(rows) > 1:
+            raise RuntimeError(
+                f"Pipeline run table has duplicate run_id values: {run_id!r}"
+            )
+
+        return self._deserialize_run(rows[0].asDict())
+
     def _create_source_dataframe(self, run: PipelineRun) -> DataFrame:
         """Serialize one immutable PipelineRun using the table's explicit schema."""
         watermark_before = run.watermark_before
@@ -270,6 +303,108 @@ class DeltaPipelineRunRepository:
             ],
             schema=self._ROW_SCHEMA,
         )
+
+    @staticmethod
+    def _deserialize_run(row: dict[str, object]) -> PipelineRun:
+        """Rebuild one validated domain run from its Delta control row."""
+        try:
+            status = PipelineRunStatus(str(row["status"]))
+        except (KeyError, ValueError) as error:
+            raise RuntimeError(
+                f"Invalid pipeline run status: {row.get('status')!r}"
+            ) from error
+
+        started_at = DeltaPipelineRunRepository._read_timestamp(
+            row.get("started_at"),
+            "started_at",
+        )
+        finished_at_value = row.get("finished_at")
+        finished_at = (
+            DeltaPipelineRunRepository._read_timestamp(
+                finished_at_value,
+                "finished_at",
+            )
+            if finished_at_value is not None
+            else None
+        )
+
+        return PipelineRun(
+            run_id=DeltaPipelineRunRepository._read_required_string(row, "run_id"),
+            source_name=DeltaPipelineRunRepository._read_required_string(
+                row,
+                "source_name",
+            ),
+            entity_name=DeltaPipelineRunRepository._read_required_string(
+                row,
+                "entity_name",
+            ),
+            status=status,
+            started_at=started_at,
+            finished_at=finished_at,
+            watermark_before=DeltaPipelineRunRepository._read_watermark(
+                row,
+                value_key="watermark_before_value",
+                overlap_key="watermark_before_overlap_seconds",
+            ),
+            candidate_watermark=DeltaPipelineRunRepository._read_watermark(
+                row,
+                value_key="candidate_watermark_value",
+                overlap_key="candidate_watermark_overlap_seconds",
+            ),
+            error_message=row.get("error_message")
+            if isinstance(row.get("error_message"), str)
+            else None,
+        )
+
+    @staticmethod
+    def _read_watermark(
+        row: dict[str, object],
+        *,
+        value_key: str,
+        overlap_key: str,
+    ) -> Watermark | None:
+        """Read one nullable pair of Delta watermark columns consistently."""
+        value = row.get(value_key)
+        overlap = row.get(overlap_key)
+
+        if value is None and overlap is None:
+            return None
+
+        if value is None or overlap is None:
+            raise RuntimeError(
+                "Pipeline run has an incomplete watermark: "
+                f"{value_key}={value!r}, {overlap_key}={overlap!r}"
+            )
+
+        if not isinstance(overlap, int):
+            raise RuntimeError(f"Pipeline run overlap is not an integer: {overlap!r}")
+
+        return Watermark(
+            value=DeltaPipelineRunRepository._read_timestamp(value, value_key),
+            overlap_seconds=overlap,
+        )
+
+    @staticmethod
+    def _read_required_string(row: dict[str, object], key: str) -> str:
+        """Read a non-blank string column from a control-table row."""
+        value = row.get(key)
+        if not isinstance(value, str) or not value.strip():
+            raise RuntimeError(
+                f"Pipeline run {key} is not a non-empty string: {value!r}"
+            )
+
+        return value
+
+    @staticmethod
+    def _read_timestamp(value: object, key: str) -> datetime:
+        """Convert a Spark UTC timestamp into an aware UTC Python timestamp."""
+        if not isinstance(value, datetime):
+            raise RuntimeError(f"Pipeline run {key} is not a datetime: {value!r}")
+
+        if value.tzinfo is None or value.utcoffset() is None:
+            return value.replace(tzinfo=UTC)
+
+        return value.astimezone(UTC)
 
     def _require_existing_running_run(self, run_id: str) -> None:
         """Reject missing, duplicated, or already terminal lifecycle rows.
