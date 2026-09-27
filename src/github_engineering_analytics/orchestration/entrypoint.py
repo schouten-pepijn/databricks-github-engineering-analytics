@@ -268,7 +268,7 @@ def _run_cli(
 
 def cli() -> None:
     """Run the Typer adapter used by the published Python-wheel command."""
-    app()
+    app(standalone_mode=False)
 
 
 if __name__ == "__main__":

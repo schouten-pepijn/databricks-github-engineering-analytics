@@ -11,6 +11,7 @@ from github_engineering_analytics.common.config import PipelineConfig
 from github_engineering_analytics.orchestration.entrypoint import (
     FullLoadSettings,
     app,
+    cli,
     main,
     resolve_github_token,
 )
@@ -305,6 +306,17 @@ def test_cli_help_lists_the_databricks_wheel_options() -> None:
         "--token-secret-key",
     ):
         assert option in result.output
+
+
+def test_cli_disables_typer_standalone_mode_for_databricks(mocker) -> None:
+    """Avoid a normal Typer SystemExit being treated as a failed wheel task."""
+    typer_app = mocker.patch(
+        "github_engineering_analytics.orchestration.entrypoint.app"
+    )
+
+    cli()
+
+    typer_app.assert_called_once_with(standalone_mode=False)
 
 
 def test_resolve_github_token_returns_direct_token_without_reading_secret() -> None:
