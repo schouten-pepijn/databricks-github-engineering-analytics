@@ -1,0 +1,59 @@
+version: 2
+
+models:
+  - name: dim_label
+    description: >
+      Current Type-1 GitHub label dimension with one row per repository-scoped
+      label ID. It is derived from the current Silver Labels relation and
+      supplies the label dimension for the future bridge_issue_label model.
+
+    data_tests:
+      - unique_combination_of_columns:
+          arguments:
+            combination_of_columns:
+              - repository_owner
+              - repository_name
+              - label_id
+
+    columns:
+      - name: label_key
+        description: >
+          Deterministic SHA-256 surrogate key derived from repository_owner,
+          repository_name, and label_id. The future bridge uses this as its
+          label foreign key.
+        data_tests:
+          - not_null
+          - unique
+
+      - name: repository_owner
+        description: GitHub repository owner in the natural label business key.
+        data_tests:
+          - not_null
+
+      - name: repository_name
+        description: GitHub repository name in the natural label business key.
+        data_tests:
+          - not_null
+
+      - name: label_id
+        description: GitHub label identifier in the repository-scoped business key.
+        data_tests:
+          - not_null
+
+      - name: name
+        description: Current GitHub label name.
+        data_tests:
+          - not_null
+
+      - name: color
+        description: Current six-character hexadecimal GitHub label color.
+        data_tests:
+          - not_null
+
+      - name: description
+        description: Optional current GitHub label description.
+
+      - name: is_default
+        description: Whether GitHub marks the label as a default label.
+        data_tests:
+          - not_null
