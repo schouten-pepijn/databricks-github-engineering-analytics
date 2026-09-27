@@ -1,0 +1,33 @@
+resources:
+  jobs:
+    github_gold_build:
+      name: GitHub Analytics Gold build
+      description: Build and validate the complete Gold dbt graph from Silver.
+
+      # Full-table Gold builds must not overlap and compete for the same tables.
+      max_concurrent_runs: 1
+
+      tasks:
+        - task_key: build_gold
+          environment_key: dbt
+
+          dbt_task:
+            source: WORKSPACE
+            project_directory: ${workspace.file_path}/dbt
+            warehouse_id: ${var.sql_warehouse_id}
+            catalog: ${var.catalog}
+            schema: github_analytics_gold
+            commands:
+              # Gold must never consume an invalid Python-owned Silver contract.
+              - dbt test --select source:silver
+              - dbt build --select tag:gold
+
+      environments:
+        - environment_key: dbt
+          spec:
+            environment_version: "3"
+            # Serverless tasks install Python packages through their environment,
+            # not through a task-level ``libraries`` field.
+            dependencies:
+              # Match the locally pinned adapter version.
+              - dbt-databricks==1.12.3
