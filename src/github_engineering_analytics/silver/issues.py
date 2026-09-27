@@ -78,6 +78,10 @@ class SilverIssue:
                 f"{issue_id!r} != {payload_issue_id!r}"
             )
 
+        author_payload = payload.get("user")
+        if not isinstance(author_payload, dict):
+            raise ValueError("payload['user'] must be a JSON object")
+
         return cls(
             repository_owner=repository_owner,
             repository_name=repository_name,
@@ -86,6 +90,11 @@ class SilverIssue:
             title=cls._require_non_empty_string(payload, "title"),
             state=cls._require_non_empty_string(payload, "state"),
             is_pull_request="pull_request" in payload,
+            author_user_id=cls._require_positive_int(
+                author_payload,
+                "id",
+                field_path="payload['user']['id']",
+            ),
             created_at=cls._parse_timestamp(payload, "created_at"),
             updated_at=cls._parse_timestamp(payload, "updated_at"),
             closed_at=cls._parse_optional_timestamp(payload, "closed_at"),
@@ -106,12 +115,19 @@ class SilverIssue:
         return payload
 
     @staticmethod
-    def _require_positive_int(payload: dict[str, object], field_name: str) -> int:
+    def _require_positive_int(
+        payload: dict[str, object],
+        field_name: str,
+        *,
+        field_path: str | None = None,
+    ) -> int:
         """Read a required positive integer field."""
         value = payload.get(field_name)
 
         if type(value) is not int or value <= 0:
-            raise ValueError(f"payload[{field_name!r}] must be a positive integer")
+            raise ValueError(
+                f"{field_path or f'payload[{field_name!r}]'} must be a positive integer"
+            )
 
         return value
 
