@@ -1,5 +1,6 @@
 {{
     config(
+        enabled=var("smoke_connection_enabled", false),
         materialized="table",
         tags=["smoke"],
     )

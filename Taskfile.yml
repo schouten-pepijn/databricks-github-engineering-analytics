@@ -128,4 +128,6 @@ tasks:
   dbt:run-smoke:
     desc: Build and test the disposable dbt smoke model
     cmds:
-      - uv run dbt build --project-dir dbt --profiles-dir dbt --select tag:smoke
+        - >-
+            uv run dbt build --project-dir dbt --profiles-dir dbt
+            --select tag:smoke --vars '{"enable_smoke_model": true}'
