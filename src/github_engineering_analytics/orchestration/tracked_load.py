@@ -65,6 +65,7 @@ def run_tracked_full_load(
     owner: str,
     repository: str,
     github_token: str | None = None,
+    run_id: str | None = None,
     run_id_factory: Callable[[], UUID] = uuid4,
     clock: Callable[[], datetime] = _current_utc_time,
 ) -> TrackedLoadResult:
@@ -87,10 +88,15 @@ def run_tracked_full_load(
     watermarks.ensure_table()
     watermark_before = watermarks.get("github", "issues")
 
+    # A bundle job supplies its job-run ID so downstream tasks can finalize the
+    # same control row without notebook-only task values. Direct callers keep a
+    # generated UUID for isolated local and integration execution.
+    resolved_run_id = run_id if run_id is not None else run_id_factory().hex
+
     # This ID is shared by Bronze and every Silver stage. It is the boundary
     # that prevents one pipeline attempt from consuming another attempt's rows.
     started_run = PipelineRun(
-        run_id=run_id_factory().hex,
+        run_id=resolved_run_id,
         source_name="github",
         entity_name="issues",
         started_at=clock(),

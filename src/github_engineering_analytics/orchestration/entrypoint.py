@@ -184,13 +184,15 @@ def main(
     repository: str | None = None,
     token_secret_scope: str | None = None,
     token_secret_key: str | None = None,
+    run_id: str | None = None,
 ) -> None:
     """Run the tracked GitHub Issues Bronze-to-Silver stage from configuration.
 
     When called without arguments, configuration comes from local environment
-    variables. The Typer adapter supplies the five task arguments for a
-    Databricks Python wheel run. The token itself is deliberately never a task
-    parameter; Databricks resolves it from the supplied secret reference.
+    variables. The Typer adapter supplies six task arguments for a Databricks
+    Python wheel run, including the job-run ID used by downstream finalization.
+    The token itself is deliberately never a task parameter; Databricks
+    resolves it from the supplied secret reference.
     """
     job_parameters = (
         catalog,
@@ -198,6 +200,7 @@ def main(
         repository,
         token_secret_scope,
         token_secret_key,
+        run_id,
     )
 
     # Treat an invocation as local only when every wheel option is absent. This
@@ -227,6 +230,7 @@ def main(
             settings=settings,
             spark=spark,
         ),
+        run_id=run_id,
     )
 
     # Record operational counts, never raw issue payloads or secret values.
@@ -256,6 +260,10 @@ def _run_cli(
         str | None,
         typer.Option("--token-secret-key"),
     ] = None,
+    run_id: Annotated[
+        str | None,
+        typer.Option("--run-id"),
+    ] = None,
 ) -> None:
     """Map Databricks wheel options onto the typed runtime entry point."""
     main(
@@ -264,6 +272,7 @@ def _run_cli(
         repository=repository,
         token_secret_scope=token_secret_scope,
         token_secret_key=token_secret_key,
+        run_id=run_id,
     )
 
 
