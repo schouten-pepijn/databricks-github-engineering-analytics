@@ -126,7 +126,7 @@ tasks:
       - uv run dbt debug --project-dir dbt --profiles-dir dbt
 
   dbt:run-smoke:
-    desc: Build and test the disposable dbt smoke model
+    desc: Build and test the opt-in dbt connectivity smoke model
     cmds:
         - >-
             uv run dbt build --project-dir dbt --profiles-dir dbt
@@ -141,3 +141,10 @@ tasks:
     desc: Build and test the Gold calendar dimension
     cmds:
       - uv run dbt build --project-dir dbt --profiles-dir dbt --select dim_date
+
+  dbt:build-dim-repository:
+    desc: Build and test the Gold repository dimension
+    cmds:
+      - >-
+        uv run dbt build --project-dir dbt --profiles-dir dbt
+        --select dim_repository
