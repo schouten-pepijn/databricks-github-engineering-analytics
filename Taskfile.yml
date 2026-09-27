@@ -170,6 +170,13 @@ tasks:
         uv run dbt build --project-dir dbt --profiles-dir dbt
         --select bridge_issue_label
 
+  dbt:build-fact-issue:
+    desc: Build and test the current-state Gold Issue fact
+    cmds:
+      - >-
+        uv run dbt build --project-dir dbt --profiles-dir dbt
+        --select fact_issue
+
   dbt:build-gold:
     desc: Build and test every current Gold dbt model
     cmds:
