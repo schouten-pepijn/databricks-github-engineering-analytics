@@ -34,6 +34,10 @@ sources:
             description: Stable GitHub issue identifier in the issue business key.
             data_tests:
               - not_null
+          - name: author_user_id
+            description: Stable global GitHub user identifier of the Issue author.
+            data_tests:
+              - not_null
 
       - name: github_users
         description: >
