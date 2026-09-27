@@ -22,7 +22,7 @@ def run_bronze_to_silver_issue_labels(
     processed, so a tracked pipeline attempt cannot consume another run's rows.
     """
     if bronze_run_id is not None and not bronze_run_id.strip():
-        raise ValueError("Bronze run_id must not be empty when supplied")
+        raise ValueError("bronze_run_id must not be empty when supplied")
 
     config = PipelineConfig(catalog=catalog)
     # Bronze remains append-only. Read its full history unless the caller
@@ -30,7 +30,7 @@ def run_bronze_to_silver_issue_labels(
     bronze = spark.table(config.bronze_issues_table)
 
     if bronze_run_id is not None:
-        bronze = bronze.where(F.col("run_id") == bronze_run_id)
+        bronze = bronze.where(F.col("_run_id") == bronze_run_id)
 
     # The transformer keeps empty label arrays in ``observed_issues`` while
     # producing relationship rows only for labels that currently exist.
