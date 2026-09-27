@@ -148,3 +148,10 @@ tasks:
       - >-
         uv run dbt build --project-dir dbt --profiles-dir dbt
         --select dim_repository
+
+  dbt:build-dim-user:
+    desc: Build and test the Gold user dimension
+    cmds:
+      - >-
+        uv run dbt build --project-dir dbt --profiles-dir dbt
+        --select dim_user
