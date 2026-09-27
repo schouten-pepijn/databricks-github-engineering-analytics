@@ -8,6 +8,7 @@ required Gold model succeeds.
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
@@ -44,6 +45,19 @@ def _current_utc_time() -> datetime:
     return datetime.now(UTC)
 
 
+@dataclass(frozen=True)
+class TrackedLoadResult:
+    """Expose the completed Bronze-to-Silver stage to the downstream Gold gate.
+
+    ``run_id`` is the stable handoff key for the finalizer. ``ingestion`` keeps
+    Bronze-specific counts separate from orchestration state, so callers do
+    not need to infer lifecycle information from an ingestion result.
+    """
+
+    run_id: str
+    ingestion: BronzeIngestionResult
+
+
 def run_tracked_full_load(
     *,
     spark: SparkSession,
@@ -53,17 +67,16 @@ def run_tracked_full_load(
     github_token: str | None = None,
     run_id_factory: Callable[[], UUID] = uuid4,
     clock: Callable[[], datetime] = _current_utc_time,
-) -> BronzeIngestionResult:
+) -> TrackedLoadResult:
     """Run and record one provisional full-or-incremental Bronze-to-Silver stage.
 
     A missing committed watermark selects a full extraction; an existing one
-    selects the overlap-aware incremental route. The run succeeds only after
-    Bronze, Issues Silver, Users Silver, Labels Silver, and Issue-Label Silver
-    complete. This temporary lifecycle boundary records a candidate watermark
-    but deliberately does not commit it while Gold processing is still absent.
-    Its ``SUCCEEDED`` state therefore describes the completed Bronze-to-Silver
-    stage, not a final end-to-end pipeline result. A stage failure is recorded
-    as ``FAILED`` before the original exception is re-raised.
+    selects the overlap-aware incremental route. Bronze, Issues Silver, Users
+    Silver, Labels Silver, and Issue-Label Silver must all finish before the
+    candidate is persisted. The run then intentionally remains ``RUNNING``:
+    a later Gold-aware finalizer owns the terminal ``SUCCEEDED`` transition and
+    watermark commit. A stage failure is recorded as ``FAILED`` before the
+    original exception is re-raised.
     """
     config = PipelineConfig(catalog=catalog)
     # Control tables must exist before creating the RUNNING record; otherwise a
@@ -150,14 +163,13 @@ def run_tracked_full_load(
             )
         raise
 
-    # A candidate watermark supports observability and the later Gold finalizer.
-    # It is not committed here: every required downstream Gold model must first
-    # complete successfully.
-    pipeline_runs.record_finished(
-        started_run.succeed(
-            candidate_watermark=result.candidate_watermark,
-            finished_at=clock(),
-        )
+    # Persist the handoff state without completing the lifecycle. The Gold
+    # finalizer will read this candidate using the returned run ID.
+    pipeline_runs.record_candidate(
+        started_run.with_candidate_watermark(result.candidate_watermark)
     )
 
-    return result
+    return TrackedLoadResult(
+        run_id=started_run.run_id,
+        ingestion=result,
+    )
