@@ -1,0 +1,35 @@
+version: 2
+
+models:
+  - name: dim_date
+    description: >
+      Static Type-0 calendar dimension with one row per calendar date. It is a
+      deterministic generated Gold relation, not a copy of a Silver source.
+    columns:
+      - name: date_key
+        description: Deterministic YYYYMMDD surrogate key for date joins.
+        data_tests:
+          - not_null
+          - unique
+
+      - name: calendar_date
+        description: Natural calendar-date business key.
+        data_tests:
+          - not_null
+          - unique
+
+      - name: month_number
+        description: Calendar month number from 1 through 12.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+
+      - name: iso_day_of_week_number
+        description: ISO weekday number where Monday is 1 and Sunday is 7.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [1, 2, 3, 4, 5, 6, 7]
