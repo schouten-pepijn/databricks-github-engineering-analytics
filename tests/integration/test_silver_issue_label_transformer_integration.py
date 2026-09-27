@@ -42,7 +42,7 @@ def test_transform_retains_empty_latest_snapshot_and_removes_relationships(
                 "psf",
                 "requests",
                 1001,
-                datetime(2026, 9, 20, 10, 0, tzinfo=UTC),
+                datetime(2026, 9, 20, 10, 0),
                 (
                     '{"id":1001,"labels":[{"id":2001,"name":"bug",'
                     '"color":"d73a4a","description":null,"default":false}]}'
@@ -55,7 +55,7 @@ def test_transform_retains_empty_latest_snapshot_and_removes_relationships(
                 "psf",
                 "requests",
                 1001,
-                datetime(2026, 9, 20, 11, 0, tzinfo=UTC),
+                datetime(2026, 9, 20, 11, 0),
                 '{"id":1001,"labels":[]}',
                 "run-new",
                 datetime(2026, 9, 20, 11, 1, tzinfo=UTC),
@@ -82,7 +82,7 @@ def test_transform_retains_empty_latest_snapshot_and_removes_relationships(
         "observed_at",
         "source_run_id",
     ]
-    assert transformed.observed_issues.collect() == [
+    assert [tuple(row) for row in transformed.observed_issues.collect()] == [
         (
             "psf",
             "requests",
