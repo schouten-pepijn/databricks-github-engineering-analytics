@@ -1,0 +1,34 @@
+version: 2
+
+models:
+  - name: dim_repository
+    description: >
+      Current Type-1 repository dimension derived from the distinct repository
+      business keys in Silver Issues. One row represents one GitHub repository.
+      It turns the issue-level Silver grain into a reusable Gold dimension.
+
+    data_tests:
+      - unique_combination_of_columns:
+          arguments:
+            combination_of_columns:
+              - repository_owner
+              - repository_name
+
+    columns:
+      - name: repository_key
+        description: >
+          Deterministic SHA-256 surrogate key derived from repository_owner and
+          repository_name. Future facts use this as their repository foreign key.
+        data_tests:
+          - not_null
+          - unique
+
+      - name: repository_owner
+        description: GitHub repository owner in the natural repository key.
+        data_tests:
+          - not_null
+
+      - name: repository_name
+        description: GitHub repository name in the natural repository key.
+        data_tests:
+          - not_null
