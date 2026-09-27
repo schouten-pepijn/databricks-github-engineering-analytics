@@ -13,3 +13,9 @@ scratch/**
 .coverage
 htmlcov/
 notes/
+
+# dbt local execution artifacts
+dbt/logs/
+dbt/target/
+dbt/.user.yml
+dbt_packages/
