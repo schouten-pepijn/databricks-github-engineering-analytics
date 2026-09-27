@@ -231,12 +231,13 @@ def main(
 
     # Record operational counts, never raw issue payloads or secret values.
     logger.bind(
+        run_id=result.run_id,
         catalog=settings.catalog,
         repository_owner=settings.owner,
         repository_name=settings.repository,
-        records_extracted=result.records_extracted,
-        batches_written=result.batches_written,
-    ).info("Completed tracked GitHub Issues load.")
+        records_extracted=result.ingestion.records_extracted,
+        batches_written=result.ingestion.batches_written,
+    ).info("Completed provisional tracked GitHub Issues load.")
 
 
 # ``invoke_without_command`` preserves the wheel's one-command invocation
