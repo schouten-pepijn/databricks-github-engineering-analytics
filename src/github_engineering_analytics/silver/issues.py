@@ -33,7 +33,11 @@ from github_engineering_analytics.silver.contracts import (
 
 @dataclass(frozen=True)
 class SilverIssue:
-    """One normalized GitHub issue at the grain of one GitHub issue ID."""
+    """One normalized GitHub issue at the repository-scoped Issue grain.
+
+    ``author_user_id`` is the stable GitHub identifier needed to relate an
+    Issue to the global Silver users table and, later, Gold ``dim_user``.
+    """
 
     repository_owner: str
     repository_name: str
@@ -42,6 +46,7 @@ class SilverIssue:
     title: str
     state: str
     is_pull_request: bool
+    author_user_id: int
     created_at: datetime
     updated_at: datetime
     closed_at: datetime | None
