@@ -156,6 +156,13 @@ tasks:
         uv run dbt build --project-dir dbt --profiles-dir dbt
         --select dim_user
 
+  dbt:build-dim-label:
+    desc: Build and test the Gold label dimension
+    cmds:
+      - >-
+        uv run dbt build --project-dir dbt --profiles-dir dbt
+        --select dim_label
+
   dbt:build-gold:
     desc: Build and test every current Gold dbt model
     cmds:
