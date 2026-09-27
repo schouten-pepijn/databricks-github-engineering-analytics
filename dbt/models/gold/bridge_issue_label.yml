@@ -1,0 +1,57 @@
+version: 2
+
+models:
+  - name: bridge_issue_label
+    description: >
+      Current-state factless bridge for the many-to-many relationship between
+      GitHub Issues and repository-scoped Labels. One row represents one label
+      currently assigned to one repository-scoped issue.
+
+    data_tests:
+      - unique_combination_of_columns:
+          arguments:
+            combination_of_columns:
+              - repository_owner
+              - repository_name
+              - issue_id
+              - label_id
+
+    columns:
+      - name: issue_key
+        description: >
+          Deterministic SHA-256 key derived from repository_owner,
+          repository_name, and issue_id. It will become the foreign key to the
+          future fact_issue model.
+        data_tests:
+          - not_null
+
+      - name: label_key
+        description: >
+          Deterministic SHA-256 key derived from repository_owner,
+          repository_name, and label_id. It is the foreign key to dim_label.
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref("dim_label")
+                field: label_key
+
+      - name: repository_owner
+        description: GitHub repository owner in the bridge natural key.
+        data_tests:
+          - not_null
+
+      - name: repository_name
+        description: GitHub repository name in the bridge natural key.
+        data_tests:
+          - not_null
+
+      - name: issue_id
+        description: GitHub issue identifier in the bridge natural key.
+        data_tests:
+          - not_null
+
+      - name: label_id
+        description: GitHub label identifier in the bridge natural key.
+        data_tests:
+          - not_null
