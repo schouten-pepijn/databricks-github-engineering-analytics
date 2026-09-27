@@ -33,4 +33,7 @@ def integration_spark() -> Iterator[SparkSession]:
     try:
         yield spark
     finally:
-        spark.conf.set("spark.sql.session.timeZone", original_timezone)
+        if original_timezone is None:
+            spark.conf.unset("spark.sql.session.timeZone")
+        else:
+            spark.conf.set("spark.sql.session.timeZone", original_timezone)

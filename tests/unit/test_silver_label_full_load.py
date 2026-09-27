@@ -1,6 +1,6 @@
 """Unit tests for the Bronze-to-Silver GitHub labels orchestration boundary."""
 
-from unittest.mock import MagicMock, Mock
+from unittest.mock import Mock
 
 import pytest
 
@@ -8,6 +8,14 @@ from github_engineering_analytics.common.config import PipelineConfig
 from github_engineering_analytics.silver.labels_full_load import (
     run_bronze_to_silver_labels,
 )
+
+
+class _RunIdColumn:
+    """Minimal Column fake for asserting the orchestration filter boundary."""
+
+    def __eq__(self, other: object) -> bool:
+        """Model the expected equality expression for this one test run ID."""
+        return other == "run-123"
 
 
 def test_run_bronze_to_silver_labels_rejects_blank_run_id_before_reading_bronze() -> (
@@ -80,10 +88,7 @@ def test_run_bronze_to_silver_labels_filters_on_the_bronze_run_id(
     transformer = Mock()
     writer = Mock()
     functions = mocker.patch("github_engineering_analytics.silver.labels_full_load.F")
-    run_id_column = MagicMock()
-    filter_condition = Mock()
-    run_id_column.__eq__.return_value = filter_condition
-    functions.col.return_value = run_id_column
+    functions.col.return_value = _RunIdColumn()
     spark.table.return_value = bronze
     bronze.where.return_value = scoped_bronze
     transformer.transform.return_value = transformed
@@ -105,5 +110,5 @@ def test_run_bronze_to_silver_labels_filters_on_the_bronze_run_id(
     )
 
     functions.col.assert_called_once_with("_run_id")
-    bronze.where.assert_called_once_with(filter_condition)
+    bronze.where.assert_called_once_with(True)
     transformer.transform.assert_called_once_with(scoped_bronze)
