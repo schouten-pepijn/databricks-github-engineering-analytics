@@ -7,7 +7,8 @@
 }}
 
 -- Grain: exactly one deterministic row.
--- This model exists only to validate dbt's create-and-read access to the
--- dedicated Gold schema in the test catalog.
+-- This operational fixture is disabled by default and enabled explicitly by
+-- ``task dbt:run-smoke``. It proves dbt can create and read a Gold table in the
+-- test catalog without becoming a normal analytics relation.
 select
     cast(1 as bigint) as smoke_test_id

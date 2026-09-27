@@ -3,8 +3,9 @@ version: 2
 models:
   - name: smoke_connection
     description: >
-      Disposable connectivity model that proves dbt can create and read a
-      table in the test catalog's Gold schema.
+      Opt-in operational connectivity model that proves dbt can create and
+      read a table in the test catalog's Gold schema. It is not an analytics
+      relation and is excluded from normal builds.
     columns:
       - name: smoke_test_id
         description: Deterministic identifier of the single smoke-test row.

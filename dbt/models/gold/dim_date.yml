@@ -5,6 +5,7 @@ models:
     description: >
       Static Type-0 calendar dimension with one row per calendar date. It is a
       deterministic generated Gold relation, not a copy of a Silver source.
+      It has no source-run lineage because it is reference data.
     columns:
       - name: date_key
         description: Deterministic YYYYMMDD surrogate key for date joins.

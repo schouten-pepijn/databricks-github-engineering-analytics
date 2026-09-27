@@ -8,7 +8,8 @@
 -- Grain: exactly one row per calendar date.
 -- date_key is a deterministic YYYYMMDD surrogate key for fact-table joins.
 -- The configured boundaries make every rebuild reproducible.
--- Type 0 dimension
+-- This is a Type 0 dimension: calendar attributes never change. It has no
+-- source_run_id because dates are generated reference data, not Silver evidence.
 with calendar_dates as (
     select
         explode(

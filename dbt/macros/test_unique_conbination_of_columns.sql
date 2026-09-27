@@ -1,7 +1,8 @@
 {% test unique_combination_of_columns(model, combination_of_columns) %}
 
-  -- Return one row for every duplicate business key.
-  -- dbt marks the test as failed when this query returns any rows.
+  -- The YAML contract supplies the model's business-key columns. Quoting each
+  -- identifier keeps this generic test safe for any valid adapter identifier.
+  -- Return one row for every duplicate key; dbt fails a data test with rows.
   with duplicate_business_keys as (
 
     select
