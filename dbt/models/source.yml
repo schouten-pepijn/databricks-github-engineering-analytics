@@ -1,0 +1,101 @@
+version: 2
+
+sources:
+  - name: silver
+    description: >
+      Current-state Silver Delta tables written and owned by the Python
+      ingestion pipeline. dbt reads these relations but never writes to them.
+    schema: github_analytics_silver
+
+    tables:
+      - name: github_issues
+        description: >
+          One current normalized GitHub issue per repository-scoped issue ID.
+          This is the future source of the Gold fact_issue relation.
+        data_tests:
+          - unique_combination_of_columns:
+              arguments:
+                combination_of_columns:
+                  - repository_owner
+                  - repository_name
+                  - issue_id
+        columns:
+          - name: repository_owner
+            description: Repository owner in the issue business key.
+            data_tests:
+              - not_null
+          - name: repository_name
+            description: Repository name in the issue business key.
+            data_tests:
+              - not_null
+          - name: issue_id
+            description: Stable GitHub issue identifier in the issue business key.
+            data_tests:
+              - not_null
+
+      - name: github_users
+        description: >
+          One current normalized GitHub user per global GitHub user ID.
+          This is the future source of the Gold dim_user relation.
+        columns:
+          - name: user_id
+            description: Stable global GitHub user identifier.
+            data_tests:
+              - not_null
+              - unique
+
+      - name: github_labels
+        description: >
+          One current Label definition per repository-scoped label ID.
+          This describes Labels themselves, not their Issue assignments.
+        data_tests:
+          - unique_combination_of_columns:
+              arguments:
+                combination_of_columns:
+                  - repository_owner
+                  - repository_name
+                  - label_id
+        columns:
+          - name: repository_owner
+            description: Repository owner in the Label business key.
+            data_tests:
+              - not_null
+          - name: repository_name
+            description: Repository name in the Label business key.
+            data_tests:
+              - not_null
+          - name: label_id
+            description: Stable GitHub Label identifier in the Label business key.
+            data_tests:
+              - not_null
+
+      - name: github_issue_labels
+        description: >
+          Current Issue-to-Label relationships. One row represents one Label
+          currently assigned to one repository-scoped Issue. This is the future
+          source of Gold bridge_issue_label.
+        data_tests:
+          - unique_combination_of_columns:
+              arguments:
+                combination_of_columns:
+                  - repository_owner
+                  - repository_name
+                  - issue_id
+                  - label_id
+        columns:
+          - name: repository_owner
+            description: Repository owner in the relationship business key.
+            data_tests:
+              - not_null
+          - name: repository_name
+            description: Repository name in the relationship business key.
+            data_tests:
+              - not_null
+          - name: issue_id
+            description: GitHub Issue identifier in the relationship business key.
+            data_tests:
+              - not_null
+          - name: label_id
+            description: GitHub Label identifier in the relationship business key.
+            data_tests:
+              - not_null
