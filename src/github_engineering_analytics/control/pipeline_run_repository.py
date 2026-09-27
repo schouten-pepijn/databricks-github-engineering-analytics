@@ -196,6 +196,45 @@ class DeltaPipelineRunRepository:
             .execute()
         )
 
+    def record_candidate(self, run: PipelineRun) -> None:
+        """Persist a candidate watermark while the run remains ``RUNNING``.
+
+        This is intentionally narrower than :meth:`record_finished`: the
+        Bronze-to-Silver stage may expose its candidate to downstream tasks,
+        but it must not set a terminal status before the Gold gate succeeds.
+        """
+        if run.status is not PipelineRunStatus.RUNNING:
+            raise ValueError("record_candidate requires a running pipeline run")
+
+        require_utc_spark_session(
+            self._spark,
+            operation="reading or writing pipeline runs",
+        )
+        self._require_existing_running_run(run.run_id)
+
+        source = self._create_source_dataframe(run)
+        target = DeltaTable.forName(self._spark, self._table_name)
+
+        (
+            target.alias("target")
+            .merge(
+                source.alias("source"),
+                "target.run_id = source.run_id",
+            )
+            .whenMatchedUpdate(
+                # Preserve a terminal outcome if another task finalized the
+                # run after the preflight lookup but before this merge.
+                condition="target.status = 'running'",
+                set={
+                    "candidate_watermark_value": "source.candidate_watermark_value",
+                    "candidate_watermark_overlap_seconds": (
+                        "source.candidate_watermark_overlap_seconds"
+                    ),
+                },
+            )
+            .execute()
+        )
+
     def _create_source_dataframe(self, run: PipelineRun) -> DataFrame:
         """Serialize one immutable PipelineRun using the table's explicit schema."""
         watermark_before = run.watermark_before

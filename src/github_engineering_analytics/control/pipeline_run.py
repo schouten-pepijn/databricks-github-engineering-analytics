@@ -117,6 +117,23 @@ class PipelineRun:
             finished_at=finished_at,
         )
 
+    def with_candidate_watermark(
+        self,
+        candidate_watermark: Watermark | None,
+    ) -> PipelineRun:
+        """Return a still-running copy that durably exposes its candidate.
+
+        Bronze and Silver can determine the source position that is safe to
+        commit, but only the later Gold-aware finalizer may make this run
+        terminal. Keeping the status ``RUNNING`` makes that boundary explicit.
+        """
+        self._require_running()
+
+        return replace(
+            self,
+            candidate_watermark=candidate_watermark,
+        )
+
     def fail(
         self,
         error_message: str,
