@@ -1,4 +1,6 @@
 version: "3"
+dotenv:
+  - .env
 
 tasks:
   setup:
@@ -117,3 +119,13 @@ tasks:
     desc: Build the deployable Python wheel
     cmds:
       - uv build --wheel
+
+  dbt:debug:
+    desc: Test the local dbt connection to the test catalog
+    cmds:
+      - uv run dbt debug --project-dir dbt --profiles-dir dbt
+
+  dbt:run-smoke:
+    desc: Build and test the disposable dbt smoke model
+    cmds:
+      - uv run dbt build --project-dir dbt --profiles-dir dbt --select tag:smoke
