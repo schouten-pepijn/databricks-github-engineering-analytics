@@ -14,7 +14,7 @@ from github_engineering_analytics.common.catalog_reset import (
 
 def test_reset_catalog_truncates_only_existing_known_tables() -> None:
     spark = Mock()
-    spark.catalog.tableExists.side_effect = [True, False, True, True, True, False]
+    spark.catalog.tableExists.side_effect = [True, False, True, True, True, True, False]
 
     result = reset_catalog(spark=spark, catalog="test_catalog")
 
@@ -23,6 +23,7 @@ def test_reset_catalog_truncates_only_existing_known_tables() -> None:
             "test_catalog.github_analytics_bronze.github_issues_raw",
             "test_catalog.github_analytics_silver.github_users",
             "test_catalog.github_analytics_silver.github_labels",
+            "test_catalog.github_analytics_silver.github_issue_labels",
             "test_catalog.github_analytics_control.ingestion_watermark",
         ),
         skipped_tables=(
@@ -35,6 +36,7 @@ def test_reset_catalog_truncates_only_existing_known_tables() -> None:
         call("test_catalog.github_analytics_silver.github_issues"),
         call("test_catalog.github_analytics_silver.github_users"),
         call("test_catalog.github_analytics_silver.github_labels"),
+        call("test_catalog.github_analytics_silver.github_issue_labels"),
         call("test_catalog.github_analytics_control.ingestion_watermark"),
         call("test_catalog.github_analytics_control.pipeline_runs"),
     ]
@@ -45,6 +47,10 @@ def test_reset_catalog_truncates_only_existing_known_tables() -> None:
         ),
         call("TRUNCATE TABLE `test_catalog`.`github_analytics_silver`.`github_users`"),
         call("TRUNCATE TABLE `test_catalog`.`github_analytics_silver`.`github_labels`"),
+        call(
+            "TRUNCATE TABLE "
+            "`test_catalog`.`github_analytics_silver`.`github_issue_labels`"
+        ),
         call(
             "TRUNCATE TABLE "
             "`test_catalog`.`github_analytics_control`.`ingestion_watermark`"
@@ -118,6 +124,7 @@ def test_main_uses_confirmed_catalog_and_returns_reset_result(mocker) -> None:
             "test_catalog.github_analytics_silver.github_issues",
             "test_catalog.github_analytics_silver.github_users",
             "test_catalog.github_analytics_silver.github_labels",
+            "test_catalog.github_analytics_silver.github_issue_labels",
             "test_catalog.github_analytics_control.ingestion_watermark",
             "test_catalog.github_analytics_control.pipeline_runs",
         ),
@@ -147,6 +154,7 @@ def test_main_supports_the_confirmed_dev_catalog(mocker) -> None:
         "dev_catalog.github_analytics_silver.github_issues",
         "dev_catalog.github_analytics_silver.github_users",
         "dev_catalog.github_analytics_silver.github_labels",
+        "dev_catalog.github_analytics_silver.github_issue_labels",
         "dev_catalog.github_analytics_control.ingestion_watermark",
         "dev_catalog.github_analytics_control.pipeline_runs",
     )
