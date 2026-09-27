@@ -75,7 +75,7 @@ def make_relationships(
     observed_at: datetime,
     source_run_id: str,
 ) -> DataFrame:
-    """Build current label relationships for the one observed test Issue."""
+    """Build current relationships; an empty tuple represents ``labels=[]``."""
     return spark.createDataFrame(
         [
             (
@@ -108,6 +108,8 @@ def test_reconcile_dataframe_removes_stale_relationships_for_an_unlabeled_issue(
     first_observed_at = datetime(2026, 9, 27, 10, 0, tzinfo=UTC)
     latest_observed_at = datetime(2026, 9, 27, 11, 0, tzinfo=UTC)
 
+    # The writer performs all test writes. This direct handle exists only to
+    # remove the isolated test rows, even when an assertion fails.
     relationship_table = DeltaTable.forName(
         integration_spark,
         config.silver_issue_labels_table,
@@ -152,6 +154,8 @@ def test_reconcile_dataframe_removes_stale_relationships_for_an_unlabeled_issue(
             (1001, 2001, "run-first"),
         ]
 
+        # A newer observed Issue with no relationship rows means its current
+        # label set is empty. It must remove the older stored relationship.
         latest_observed_issue = make_observed_issue(
             integration_spark,
             repository_name=repository_name,
@@ -181,8 +185,11 @@ def test_reconcile_dataframe_removes_stale_relationships_for_an_unlabeled_issue(
             .collect()
         )
 
+        # Scope the assertion to this generated repository so concurrent or
+        # previously retained test data cannot affect the result.
         assert remaining_rows == []
     finally:
+        # The UUID-backed repository name limits cleanup to this test's rows.
         relationship_table.delete(
             condition=(
                 f"repository_owner = 'pytest' AND repository_name = '{repository_name}'"
