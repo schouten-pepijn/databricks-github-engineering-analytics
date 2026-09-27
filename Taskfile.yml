@@ -131,3 +131,8 @@ tasks:
         - >-
             uv run dbt build --project-dir dbt --profiles-dir dbt
             --select tag:smoke --vars '{"enable_smoke_model": true}'
+
+  dbt:test-sources:
+    desc: Validate dbt source contracts for Python-owned Silver tables
+    cmds:
+      - uv run dbt test --project-dir dbt --profiles-dir dbt --select source:silver
