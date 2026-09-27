@@ -70,3 +70,12 @@ class PipelineConfig:
         describes Labels themselves, not which Issues currently use them.
         """
         return f"{self.catalog}.{self.silver_schema}.github_labels"
+
+    @property
+    def silver_issue_labels_table(self) -> str:
+        """Return current Issue-to-Label relationships at Silver grain.
+
+        One row means that one Label is currently assigned to one Issue. This is
+        the future source for Gold ``bridge_issue_label``.
+        """
+        return f"{self.catalog}.{self.silver_schema}.github_issue_labels"
