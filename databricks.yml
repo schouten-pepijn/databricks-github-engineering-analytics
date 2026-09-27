@@ -26,6 +26,8 @@ variables:
     description: Databricks secret scope that contains the GitHub token
   github_token_secret_key:
     description: Key of the GitHub token in the Databricks secret scope
+  sql_warehouse_id:
+    description: SQL warehouse used by the native dbt Gold build task
 
 targets:
   dev:
@@ -51,6 +53,8 @@ targets:
       github_token_secret_scope: github-engineering-analytics
       github_token_secret_key: github-token
 
+      sql_warehouse_id: 8e5edd73fdb26e89
+
   test:
     mode: development
     workspace:
@@ -65,6 +69,8 @@ targets:
 
       github_token_secret_scope: github-engineering-analytics
       github_token_secret_key: github-token
+
+      sql_warehouse_id: 8e5edd73fdb26e89
 
   prod:
     mode: production
