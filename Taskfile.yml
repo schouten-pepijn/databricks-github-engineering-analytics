@@ -155,3 +155,10 @@ tasks:
       - >-
         uv run dbt build --project-dir dbt --profiles-dir dbt
         --select dim_user
+
+  dbt:build-gold:
+    desc: Build and test every current Gold dbt model
+    cmds:
+      - >-
+        uv run dbt build --project-dir dbt --profiles-dir dbt
+        --select tag:gold
