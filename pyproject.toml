@@ -28,6 +28,7 @@ dev = [
     "databricks-connect>=16.4,<16.5",
     "ipykernel",
     "pytest-mock>=3.15.1",
+    "dbt-databricks==1.12.3",
 ]
 
 [tool.bumpversion]
