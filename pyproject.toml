@@ -17,6 +17,8 @@ dependencies = [
 
 [project.scripts]
 github-engineering-analytics-full-load = "github_engineering_analytics.orchestration.entrypoint:cli"
+github-engineering-analytics-finalize-success = "github_engineering_analytics.orchestration.finalizer_entrypoint:success_cli"
+github-engineering-analytics-finalize-failure = "github_engineering_analytics.orchestration.finalizer_entrypoint:failure_cli"
 
 
 [dependency-groups]
