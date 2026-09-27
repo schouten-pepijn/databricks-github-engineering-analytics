@@ -51,6 +51,21 @@ targets:
       github_token_secret_scope: github-engineering-analytics
       github_token_secret_key: github-token
 
+  test:
+    mode: development
+    workspace:
+      host: https://dbc-bcaf62db-c2ea.cloud.databricks.com
+      profile: databricks-dev
+    variables:
+      catalog: github_engineering_analytics_test
+      schema: ${workspace.current_user.short_name}
+
+      github_owner: psf
+      github_repository: requests
+
+      github_token_secret_scope: github-engineering-analytics
+      github_token_secret_key: github-token
+
   prod:
     mode: production
     workspace:
