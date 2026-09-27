@@ -46,6 +46,7 @@ def test_run_bronze_to_silver_keeps_the_newest_issue_version(
                         "number": 1,
                         "title": "Old title",
                         "state": "open",
+                        "user": {"id": 2001},
                         "created_at": "2026-09-20T09:00:00Z",
                         "updated_at": "2026-09-20T10:00:00Z",
                         "closed_at": None,
@@ -74,6 +75,7 @@ def test_run_bronze_to_silver_keeps_the_newest_issue_version(
                         "number": 1,
                         "title": "New title",
                         "state": "closed",
+                        "user": {"id": 2001},
                         "created_at": "2026-09-20T09:00:00Z",
                         "updated_at": "2026-09-20T11:00:00Z",
                         "closed_at": "2026-09-20T11:00:00Z",
@@ -103,6 +105,7 @@ def test_run_bronze_to_silver_keeps_the_newest_issue_version(
                 "title",
                 "state",
                 "is_pull_request",
+                "author_user_id",
                 "source_run_id",
                 F.date_format(
                     "updated_at",
@@ -117,6 +120,7 @@ def test_run_bronze_to_silver_keeps_the_newest_issue_version(
         assert rows[0]["title"] == "New title"
         assert rows[0]["state"] == "closed"
         assert rows[0]["is_pull_request"] is False
+        assert rows[0]["author_user_id"] == 2001
         assert rows[0]["source_run_id"] == new_run_id
         assert rows[0]["updated_at_utc"] == "2026-09-20T11:00:00Z"
     finally:

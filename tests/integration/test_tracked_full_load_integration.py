@@ -153,7 +153,7 @@ def test_tracked_full_load_persists_bronze_silver_and_successful_run(
                 & (F.col("repository_name") == repository_name)
                 & (F.col("issue_id") == 123)
             )
-            .select("title", "state", "source_run_id")
+            .select("title", "state", "author_user_id", "source_run_id")
             .limit(2)
             .collect()
         )
@@ -232,6 +232,7 @@ def test_tracked_full_load_persists_bronze_silver_and_successful_run(
         assert silver_rows[0].asDict() == {
             "title": "Tracked full-load integration test",
             "state": "open",
+            "author_user_id": user_id,
             "source_run_id": run_id,
         }
         assert [row.asDict() for row in silver_user_rows] == [
@@ -417,7 +418,7 @@ def test_tracked_full_load_uses_stored_watermark_for_incremental_bronze_load(
                 & (F.col("repository_name") == repository_name)
                 & (F.col("issue_id") == issue_id)
             )
-            .select("source_run_id")
+            .select("author_user_id", "source_run_id")
             .limit(2)
             .collect()
         )
@@ -491,7 +492,9 @@ def test_tracked_full_load_uses_stored_watermark_for_incremental_bronze_load(
                 "request_watermark_utc": "2026-09-20T11:55:00Z",
             }
         ]
-        assert [row.asDict() for row in silver_rows] == [{"source_run_id": run_id}]
+        assert [row.asDict() for row in silver_rows] == [
+            {"author_user_id": user_id, "source_run_id": run_id}
+        ]
         assert [row.asDict() for row in silver_user_rows] == [
             {
                 "login": f"incremental-user-{run_id}",

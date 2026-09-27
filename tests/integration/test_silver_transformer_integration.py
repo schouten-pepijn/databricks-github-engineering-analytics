@@ -66,6 +66,7 @@ def test_transform_selects_the_latest_issue_and_classifies_pull_requests(
                 source_updated_at=datetime(2026, 9, 20, 10, 0, tzinfo=UTC),
                 raw_json=(
                     '{"id":1001,"number":1,"title":"Old title","state":"open",'
+                    '"user":{"id":2001},'
                     '"created_at":"2026-09-20T09:00:00Z",'
                     '"updated_at":"2026-09-20T10:00:00Z","closed_at":null}'
                 ),
@@ -78,6 +79,7 @@ def test_transform_selects_the_latest_issue_and_classifies_pull_requests(
                 source_updated_at=datetime(2026, 9, 20, 11, 0, tzinfo=UTC),
                 raw_json=(
                     '{"id":1001,"number":1,"title":"New title","state":"closed",'
+                    '"user":{"id":2001},'
                     '"created_at":"2026-09-20T09:00:00Z",'
                     '"updated_at":"2026-09-20T11:00:00Z",'
                     '"closed_at":"2026-09-20T11:00:00Z"}'
@@ -91,6 +93,7 @@ def test_transform_selects_the_latest_issue_and_classifies_pull_requests(
                 source_updated_at=datetime(2026, 9, 20, 12, 0, tzinfo=UTC),
                 raw_json=(
                     '{"id":1002,"number":2,"title":"Pull request","state":"open",'
+                    '"user":{"id":2002},'
                     '"created_at":"2026-09-20T12:00:00Z",'
                     '"updated_at":"2026-09-20T12:00:00Z",'
                     '"closed_at":null,"pull_request":{"url":"https://example.test/pr"}}'
@@ -114,6 +117,7 @@ def test_transform_selects_the_latest_issue_and_classifies_pull_requests(
         "title",
         "state",
         "is_pull_request",
+        "author_user_id",
         "created_at",
         "updated_at",
         "closed_at",
@@ -124,9 +128,11 @@ def test_transform_selects_the_latest_issue_and_classifies_pull_requests(
     assert rows[0]["title"] == "New title"
     assert rows[0]["state"] == "closed"
     assert rows[0]["is_pull_request"] is False
+    assert rows[0]["author_user_id"] == 2001
     assert rows[0]["source_run_id"] == "run-new"
     assert rows[1]["issue_id"] == 1002
     assert rows[1]["is_pull_request"] is True
+    assert rows[1]["author_user_id"] == 2002
 
 
 @pytest.mark.parametrize(
@@ -134,12 +140,14 @@ def test_transform_selects_the_latest_issue_and_classifies_pull_requests(
     [
         (
             '{"id":1001,"number":1,"title":"Naive timestamp","state":"open",'
+            '"user":{"id":2001},'
             '"created_at":"2026-09-20T10:00:00",'
             '"updated_at":"2026-09-20T10:00:00Z","closed_at":null}'
         ),
         (
             '{"id":1001,"number":1,"title":"Invalid closed timestamp",'
-            '"state":"open","created_at":"2026-09-20T10:00:00Z",'
+            '"state":"open","user":{"id":2001},'
+            '"created_at":"2026-09-20T10:00:00Z",'
             '"updated_at":"2026-09-20T10:00:00Z","closed_at":""}'
         ),
     ],
@@ -167,4 +175,30 @@ def test_transform_rejects_invalid_source_timestamps(
         ValueError,
         match="cannot form valid Silver issues",
     ):
+        BronzeIssueToSilverTransformer().transform(bronze)
+
+
+def test_transform_rejects_an_issue_without_a_valid_author(
+    integration_spark: SparkSession,
+) -> None:
+    """Reject rows that cannot join an Issue to the global user dimension."""
+    bronze = integration_spark.createDataFrame(
+        [
+            _bronze_row(
+                issue_id=1001,
+                source_updated_at=datetime(2026, 9, 20, 10, 0, tzinfo=UTC),
+                raw_json=(
+                    '{"id":1001,"number":1,"title":"Missing author","state":"open",'
+                    '"created_at":"2026-09-20T10:00:00Z",'
+                    '"updated_at":"2026-09-20T10:00:00Z","closed_at":null}'
+                ),
+                run_id="run-invalid-author",
+                ingested_at=datetime(2026, 9, 20, 10, 1, tzinfo=UTC),
+                batch_reference="batch-1",
+            )
+        ],
+        schema=_BRONZE_TEST_SCHEMA,
+    )
+
+    with pytest.raises(ValueError, match="cannot form valid Silver issues"):
         BronzeIssueToSilverTransformer().transform(bronze)
