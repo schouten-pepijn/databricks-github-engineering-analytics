@@ -29,6 +29,7 @@ class DeltaWatermarkRepository:
 
     The table grain is one row per ``(source_name, entity_name)``. A merge is
     monotonic: a stale retry cannot move a committed watermark backwards.
+    This is pipeline control state, not a Silver entity or Gold-model source.
     """
 
     _ROW_SCHEMA: ClassVar[StructType] = StructType(

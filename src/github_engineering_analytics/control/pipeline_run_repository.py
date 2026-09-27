@@ -27,7 +27,12 @@ from github_engineering_analytics.control.pipeline_run import (
 
 
 class DeltaPipelineRunRepository:
-    """Create and later persist one Delta row per pipeline run."""
+    """Create and later persist one Delta row per pipeline run.
+
+    Pipeline runs are operational audit records for replay, diagnosis and
+    watermark safety. They describe processing, not GitHub business entities,
+    and are not intended as a Gold analytical source.
+    """
 
     # Keep this aligned with ensure_table(). An explicit schema prevents Spark
     # from inferring nullable fields or timestamp types from a single row.

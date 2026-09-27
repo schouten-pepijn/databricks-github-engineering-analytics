@@ -144,7 +144,12 @@ class SilverUser:
 
 
 class DeltaSilverUserWriter:
-    """Persist the latest observed GitHub user state at Silver grain."""
+    """Persist the latest observed GitHub User state at Silver grain.
+
+    Users are global GitHub identities, so the business key is ``user_id``
+    rather than a repository key. This table is the future source of Gold
+    ``dim_user``; ``source_issue_id`` preserves its Issue-payload lineage.
+    """
 
     _ROW_SCHEMA: ClassVar[StructType] = StructType(
         [

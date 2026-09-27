@@ -178,7 +178,9 @@ class DeltaSilverIssueWriter:
 
     Table grain: one row per repository owner, repository name, and GitHub
     issue ID. Repeated or older source versions cannot create duplicate rows
-    or replace a newer issue state.
+    or replace a newer issue state. This entity is the future source of the
+    Gold ``fact_issue`` table; nested Labels remain outside this table because
+    an Issue can have many Labels.
     """
 
     _ROW_SCHEMA: ClassVar[StructType] = StructType(

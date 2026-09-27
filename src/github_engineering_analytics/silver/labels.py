@@ -259,7 +259,9 @@ class DeltaSilverLabelWriter:
     """Create the repository-scoped Silver label table contract.
 
     Table grain: one row per repository owner, repository name, and GitHub
-    label ID. ``description`` is the only nullable domain attribute.
+    label ID. ``description`` is the only nullable domain attribute. This
+    table describes Label definitions and is the future source of Gold
+    ``dim_label``; Issue-to-Label membership belongs in the separate relation.
     """
 
     _ROW_SCHEMA: ClassVar[StructType] = StructType(

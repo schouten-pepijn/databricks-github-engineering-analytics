@@ -125,7 +125,12 @@ class BronzeIssueRecord:
 
 
 class DeltaBronzeIssueWriter:
-    """Append source-oriented Bronze issue records to a Delta table."""
+    """Append source-oriented Bronze Issue records to a Delta table.
+
+    Bronze is an immutable evidence layer: overlap windows and repeat API
+    observations may create multiple rows for one Issue. Deduplication and
+    current-state modeling belong in Silver, never in this writer.
+    """
 
     _ROW_SCHEMA: ClassVar[StructType] = StructType(
         [
