@@ -14,5 +14,9 @@ clean-targets:
   - "target"
   - "dbt_packages"
 
+vars:
+  date_dimension_start: "2008-01-01"
+  date_dimension_end: "2035-12-31"
+
 models:
   github_engineering_analytics: {}
