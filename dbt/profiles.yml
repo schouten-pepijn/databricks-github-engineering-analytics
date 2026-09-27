@@ -1,8 +1,11 @@
 github_engineering_analytics:
+  # This checked-in profile contains connection coordinates only. Authentication
+  # uses the local OAuth session; credentials and tokens never belong in Git.
   target: dev
   outputs:
     dev:
       type: databricks
+      # dbt writes Gold only. Silver remains a read-only declared source.
       catalog: "{{ env_var('DATABRICKS_TEST_CATALOG') }}"
       schema: github_analytics_gold
       host: "{{ env_var('DATABRICKS_HOST') }}"
