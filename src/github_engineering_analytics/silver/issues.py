@@ -192,6 +192,7 @@ class DeltaSilverIssueWriter:
             StructField("title", StringType(), nullable=False),
             StructField("state", StringType(), nullable=False),
             StructField("is_pull_request", BooleanType(), nullable=False),
+            StructField("author_user_id", LongType(), nullable=False),
             StructField("created_at", TimestampType(), nullable=False),
             StructField("updated_at", TimestampType(), nullable=False),
             StructField("closed_at", TimestampType(), nullable=True),
@@ -210,7 +211,12 @@ class DeltaSilverIssueWriter:
         self._table_name = config.silver_issues_table
 
     def ensure_table(self) -> None:
-        """Create the Silver schema and latest-issue table when absent."""
+        """Create the Silver table and add columns required by newer contracts.
+
+        Delta adds a column as nullable for an existing table because historic
+        rows cannot be populated atomically during DDL. The next Bronze-to-
+        Silver refresh writes the required author ID for each observed Issue.
+        """
         require_utc_spark_session(
             self._spark,
             operation="writing Silver issues",
@@ -231,12 +237,21 @@ class DeltaSilverIssueWriter:
             "title STRING NOT NULL, "
             "state STRING NOT NULL, "
             "is_pull_request BOOLEAN NOT NULL, "
+            "author_user_id BIGINT NOT NULL, "
             "created_at TIMESTAMP NOT NULL, "
             "updated_at TIMESTAMP NOT NULL, "
             "closed_at TIMESTAMP, "
             "source_run_id STRING NOT NULL"
             ") USING DELTA"
         )
+
+        existing_columns = set(self._spark.table(self._table_name).columns)
+        if "author_user_id" not in existing_columns:
+            self._spark.sql(
+                "ALTER TABLE "
+                f"{quote_multipart_identifier(self._table_name)} "
+                "ADD COLUMNS (author_user_id BIGINT)"
+            )
 
     def upsert(self, records: Sequence[SilverIssue]) -> None:
         """Merge valid records without allowing one batch to duplicate a key."""
@@ -259,6 +274,7 @@ class DeltaSilverIssueWriter:
                     record.title,
                     record.state,
                     record.is_pull_request,
+                    record.author_user_id,
                     record.created_at,
                     record.updated_at,
                     record.closed_at,
@@ -316,6 +332,7 @@ class DeltaSilverIssueWriter:
                     "title": "source.title",
                     "state": "source.state",
                     "is_pull_request": "source.is_pull_request",
+                    "author_user_id": "source.author_user_id",
                     "created_at": "source.created_at",
                     "updated_at": "source.updated_at",
                     "closed_at": "source.closed_at",
@@ -331,6 +348,7 @@ class DeltaSilverIssueWriter:
                     "title": "source.title",
                     "state": "source.state",
                     "is_pull_request": "source.is_pull_request",
+                    "author_user_id": "source.author_user_id",
                     "created_at": "source.created_at",
                     "updated_at": "source.updated_at",
                     "closed_at": "source.closed_at",
