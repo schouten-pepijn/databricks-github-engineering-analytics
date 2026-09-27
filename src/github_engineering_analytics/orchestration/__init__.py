@@ -1,1 +1,1 @@
-"""Coordinate cross-layer pipeline lifecycles and their runtime entry points."""
+"""Coordinate Control, Bronze, Silver, and future Gold pipeline boundaries."""

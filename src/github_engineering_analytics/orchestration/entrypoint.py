@@ -1,4 +1,4 @@
-"""Run the tracked GitHub Issues lifecycle from local or Databricks settings."""
+"""Configure and launch the tracked GitHub Issues Bronze-to-Silver stage."""
 
 from __future__ import annotations
 
@@ -15,8 +15,9 @@ from github_engineering_analytics.orchestration.tracked_load import (
     run_tracked_full_load,
 )
 
-# A Databricks wheel task supplies named options directly, not a Typer
-# subcommand. Completion is disabled to keep the deployed CLI contract small.
+# A Databricks wheel task supplies named options directly, rather than a Typer
+# subcommand. Completion is unnecessary because this is an automation boundary,
+# not an interactive shell command.
 app = typer.Typer(
     add_completion=False,
     help="Run tracked GitHub Issues ingestion through Bronze and Silver.",
@@ -25,7 +26,13 @@ app = typer.Typer(
 
 @dataclass(frozen=True)
 class FullLoadSettings:
-    """Validated runtime configuration for one tracked GitHub Issues run."""
+    """Validated configuration for one tracked GitHub Issues Bronze-to-Silver run.
+
+    At most one token mechanism may be configured: ``GITHUB_TOKEN`` for local
+    development, or a Databricks secret scope/key pair for a deployed wheel.
+    A token may be omitted for a public repository. The deployed option keeps
+    a private-repository token out of bundle configuration and job parameters.
+    """
 
     catalog: str
     owner: str
@@ -39,7 +46,12 @@ class FullLoadSettings:
         cls,
         environment: Mapping[str, str],
     ) -> Self:
-        """Create settings from explicitly named environment variables."""
+        """Validate named configuration values without resolving a token.
+
+        Secret lookup is intentionally deferred to :func:`resolve_github_token`.
+        Keeping validation separate from runtime I/O makes this configuration
+        boundary deterministic and straightforward to unit test.
+        """
         required_variables = (
             "GITHUB_ANALYTICS_CATALOG",
             "GITHUB_ANALYTICS_OWNER",
@@ -54,6 +66,8 @@ class FullLoadSettings:
             missing = ", ".join(missing_variables)
             raise ValueError(f"Missing required environment variables: {missing}")
 
+        # Normalize blank optional values to ``None`` before validating the two
+        # mutually exclusive token mechanisms.
         token = environment.get("GITHUB_TOKEN")
         secret_scope = environment.get("GITHUB_ANALYTICS_TOKEN_SECRET_SCOPE")
         secret_key = environment.get("GITHUB_ANALYTICS_TOKEN_SECRET_KEY")
@@ -100,7 +114,12 @@ class DatabricksSecretGetter(Protocol):
 
 
 def _get_or_create_spark() -> SparkSession:
-    """Return the active Spark session or create one in the runtime."""
+    """Return the Spark session supplied or created by the active PySpark runtime.
+
+    A Databricks job supplies its active session. Outside Databricks, the
+    process must configure a compatible Spark runtime separately; GitHub CLI
+    environment variables do not configure Spark or Databricks Connect.
+    """
     return SparkSession.builder.getOrCreate()
 
 
@@ -110,7 +129,7 @@ def _get_databricks_secret(
     scope: str,
     key: str,
 ) -> str:
-    """Read one secret through Databricks Utilities at runtime."""
+    """Resolve one classic Databricks secret at runtime without logging it."""
     from pyspark.dbutils import DBUtils
 
     return DBUtils(spark).secrets.get(scope=scope, key=key)
@@ -122,7 +141,11 @@ def resolve_github_token(
     spark: SparkSession,
     secret_getter: DatabricksSecretGetter = _get_databricks_secret,
 ) -> str | None:
-    """Resolve a direct GitHub token or a configured Databricks secret."""
+    """Resolve the configured GitHub token without exposing it as a CLI value.
+
+    A direct token may be used for local development. Deployed jobs use the
+    secret scope/key reference and retrieve the value only inside Databricks.
+    """
     if settings.github_token is not None:
         return settings.github_token
 
@@ -162,7 +185,7 @@ def main(
     token_secret_scope: str | None = None,
     token_secret_key: str | None = None,
 ) -> None:
-    """Run tracked GitHub Issues ingestion from local or supplied configuration.
+    """Run the tracked GitHub Issues Bronze-to-Silver stage from configuration.
 
     When called without arguments, configuration comes from local environment
     variables. The Typer adapter supplies the five task arguments for a
@@ -177,6 +200,9 @@ def main(
         token_secret_key,
     )
 
+    # Treat an invocation as local only when every wheel option is absent. This
+    # prevents a partial job invocation from silently mixing job and developer
+    # environment configuration.
     if all(parameter is None for parameter in job_parameters):
         settings = FullLoadSettings.from_environment(os.environ)
     else:
@@ -189,6 +215,7 @@ def main(
                 "GITHUB_ANALYTICS_TOKEN_SECRET_KEY": token_secret_key or "",
             }
         )
+    # Start Spark and secret I/O only after the complete configuration is valid.
     spark = _get_or_create_spark()
 
     result = run_tracked_full_load(
@@ -202,6 +229,7 @@ def main(
         ),
     )
 
+    # Record operational counts, never raw issue payloads or secret values.
     logger.bind(
         catalog=settings.catalog,
         repository_owner=settings.owner,
@@ -211,8 +239,9 @@ def main(
     ).info("Completed tracked GitHub Issues load.")
 
 
-# ``invoke_without_command`` preserves the former argparse invocation shape:
-# ``github-engineering-analytics-full-load --catalog ...``.
+# ``invoke_without_command`` preserves the wheel's one-command invocation
+# shape: ``github-engineering-analytics-full-load --catalog ...``. The explicit
+# hyphenated secret options must match the DAB ``named_parameters`` keys.
 @app.callback(invoke_without_command=True)
 def _run_cli(
     catalog: Annotated[str | None, typer.Option()] = None,
@@ -227,7 +256,7 @@ def _run_cli(
         typer.Option("--token-secret-key"),
     ] = None,
 ) -> None:
-    """Map Databricks wheel options onto the runtime entry point."""
+    """Map Databricks wheel options onto the typed runtime entry point."""
     main(
         catalog=catalog,
         owner=owner,
