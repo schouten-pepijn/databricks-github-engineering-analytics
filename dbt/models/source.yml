@@ -1,6 +1,8 @@
 version: 2
 
 sources:
+  # Python writes and reconciles Silver. These source tests are the contract
+  # gate that dbt runs before trusting Silver rows in Gold models.
   - name: silver
     description: >
       Current-state Silver Delta tables written and owned by the Python
@@ -46,8 +48,8 @@ sources:
 
       - name: github_labels
         description: >
-          One current Label definition per repository-scoped label ID.
-          This describes Labels themselves, not their Issue assignments.
+          One current label definition per repository-scoped label ID.
+          This describes labels themselves, not their issue assignments.
         data_tests:
           - unique_combination_of_columns:
               arguments:
@@ -57,22 +59,22 @@ sources:
                   - label_id
         columns:
           - name: repository_owner
-            description: Repository owner in the Label business key.
+            description: Repository owner in the label business key.
             data_tests:
               - not_null
           - name: repository_name
-            description: Repository name in the Label business key.
+            description: Repository name in the label business key.
             data_tests:
               - not_null
           - name: label_id
-            description: Stable GitHub Label identifier in the Label business key.
+            description: Stable GitHub label identifier in the label business key.
             data_tests:
               - not_null
 
       - name: github_issue_labels
         description: >
-          Current Issue-to-Label relationships. One row represents one Label
-          currently assigned to one repository-scoped Issue. This is the future
+          Current issue-to-label relationships. One row represents one label
+          currently assigned to one repository-scoped issue. This is the future
           source of Gold bridge_issue_label.
         data_tests:
           - unique_combination_of_columns:
@@ -92,10 +94,10 @@ sources:
             data_tests:
               - not_null
           - name: issue_id
-            description: GitHub Issue identifier in the relationship business key.
+            description: GitHub issue identifier in the relationship business key.
             data_tests:
               - not_null
           - name: label_id
-            description: GitHub Label identifier in the relationship business key.
+            description: GitHub label identifier in the relationship business key.
             data_tests:
               - not_null
