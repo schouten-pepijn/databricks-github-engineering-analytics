@@ -14,6 +14,11 @@ def _valid_payload(**overrides: object) -> dict[str, object]:
         "number": 42,
         "title": "Improve retry handling",
         "state": "open",
+        "user": {
+            "id": 2001,
+            "login": "octocat",
+            "type": "User",
+        },
         "created_at": "2026-09-20T10:00:00+02:00",
         "updated_at": "2026-09-20T11:30:00Z",
         "closed_at": None,
@@ -49,6 +54,7 @@ def test_from_bronze_row_normalizes_a_valid_issue() -> None:
         title="Improve retry handling",
         state="open",
         is_pull_request=False,
+        author_user_id=2001,
         created_at=datetime(2026, 9, 20, 8, 0, tzinfo=UTC),
         updated_at=datetime(2026, 9, 20, 11, 30, tzinfo=UTC),
         closed_at=None,
@@ -86,6 +92,26 @@ def test_from_bronze_row_rejects_mismatched_issue_ids() -> None:
         ValueError, match="Bronze issue_id must match payload\\['id'\\]"
     ):
         _from_payload(_valid_payload(id=2002))
+
+
+@pytest.mark.parametrize(
+    "user",
+    [
+        None,
+        {"id": 0},
+        {"id": "2001"},
+    ],
+)
+def test_from_bronze_row_rejects_an_invalid_issue_author(user: object) -> None:
+    """An Issue must expose a stable positive author ID for Gold joins."""
+    with pytest.raises(
+        ValueError,
+        match=(
+            r"payload\['user'\](?:\['id'\])? must be "
+            r"(?:a JSON object|a positive integer)"
+        ),
+    ):
+        _from_payload(_valid_payload(user=user))
 
 
 @pytest.mark.parametrize(

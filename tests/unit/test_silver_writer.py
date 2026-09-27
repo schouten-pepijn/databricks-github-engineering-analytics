@@ -39,6 +39,7 @@ def make_issue(
         title="Improve retry handling",
         state="open",
         is_pull_request=False,
+        author_user_id=2001,
         created_at=datetime(2026, 9, 20, 10, 0, tzinfo=UTC),
         updated_at=updated_at,
         closed_at=None,
@@ -59,6 +60,9 @@ def make_dataframe_source() -> Mock:
 
 def test_ensure_table_creates_silver_schema_and_issue_table() -> None:
     spark, writer = make_writer()
+    spark.table.return_value.columns = [
+        field.name for field in DeltaSilverIssueWriter._ROW_SCHEMA
+    ]
 
     writer.ensure_table()
 
@@ -76,8 +80,26 @@ def test_ensure_table_creates_silver_schema_and_issue_table() -> None:
     ) in table_statement
     assert "issue_id BIGINT NOT NULL" in table_statement
     assert "is_pull_request BOOLEAN NOT NULL" in table_statement
+    assert "author_user_id BIGINT NOT NULL" in table_statement
     assert "source_run_id STRING NOT NULL" in table_statement
     assert table_statement.endswith(") USING DELTA")
+
+
+def test_ensure_table_adds_author_user_id_to_an_existing_table() -> None:
+    """Evolve old Silver tables without dropping their existing Issue rows."""
+    spark, writer = make_writer()
+    spark.table.return_value.columns = [
+        field.name
+        for field in DeltaSilverIssueWriter._ROW_SCHEMA
+        if field.name != "author_user_id"
+    ]
+
+    writer.ensure_table()
+
+    assert spark.sql.call_args_list[2].args[0] == (
+        "ALTER TABLE `test_catalog`.`github_analytics_silver`.`github_issues` "
+        "ADD COLUMNS (author_user_id BIGINT)"
+    )
 
 
 def test_upsert_does_not_write_empty_input() -> None:
@@ -127,6 +149,7 @@ def test_upsert_merges_one_issue_using_the_silver_business_key(
                 "Improve retry handling",
                 "open",
                 False,
+                2001,
                 datetime(2026, 9, 20, 10, 0, tzinfo=UTC),
                 datetime(2026, 9, 20, 11, 30, tzinfo=UTC),
                 None,
@@ -156,6 +179,21 @@ def test_upsert_merges_one_issue_using_the_silver_business_key(
         "title": "source.title",
         "state": "source.state",
         "is_pull_request": "source.is_pull_request",
+        "author_user_id": "source.author_user_id",
+        "created_at": "source.created_at",
+        "updated_at": "source.updated_at",
+        "closed_at": "source.closed_at",
+        "source_run_id": "source.source_run_id",
+    }
+    assert update_builder.whenNotMatchedInsert.call_args.kwargs["values"] == {
+        "repository_owner": "source.repository_owner",
+        "repository_name": "source.repository_name",
+        "issue_id": "source.issue_id",
+        "issue_number": "source.issue_number",
+        "title": "source.title",
+        "state": "source.state",
+        "is_pull_request": "source.is_pull_request",
+        "author_user_id": "source.author_user_id",
         "created_at": "source.created_at",
         "updated_at": "source.updated_at",
         "closed_at": "source.closed_at",
