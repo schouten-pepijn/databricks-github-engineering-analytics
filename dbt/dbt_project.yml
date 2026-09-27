@@ -1,9 +1,13 @@
+# dbt owns the Gold serving layer. Python owns the Control, Bronze, and Silver
+# layers that provide the tested source relations for these models.
 name: github_engineering_analytics
 version: "1.0.0"
 config-version: 2
 
 profile: github_engineering_analytics
 
+# Keep models, generic tests, and macros explicit so local and deployed dbt
+# invocations resolve the same project structure.
 model-paths: ["models"]
 test-paths: ["tests"]
 macro-paths: ["macros"]
@@ -15,6 +19,8 @@ clean-targets:
   - "dbt_packages"
 
 vars:
+  # Fixed inclusive bounds make dim_date rebuilds reproducible instead of
+  # changing implicitly with the day on which dbt is executed.
   date_dimension_start: "2008-01-01"
   date_dimension_end: "2035-12-31"
 
