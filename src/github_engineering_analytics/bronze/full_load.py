@@ -28,6 +28,9 @@ from github_engineering_analytics.control.watermark import Watermark
 from github_engineering_analytics.control.watermark_repository import (
     DeltaWatermarkRepository,
 )
+from github_engineering_analytics.silver.issue_labels_full_load import (
+    run_bronze_to_silver_issue_labels,
+)
 from github_engineering_analytics.silver.issues_full_load import run_bronze_to_silver
 from github_engineering_analytics.silver.labels_full_load import (
     run_bronze_to_silver_labels,
@@ -260,12 +263,15 @@ def run_tracked_full_load(
 
     A missing committed watermark selects a full extraction; an existing one
     selects the overlap-aware incremental route. The run succeeds only after
-    Bronze, Issues Silver, Users Silver, and Labels Silver complete. This
-    boundary records the candidate watermark but deliberately does not commit
-    it while required Gold processing is still absent. A stage failure is
-    recorded as FAILED before the original exception is re-raised.
+    Bronze, Issues Silver, Users Silver, Labels Silver, and Issue-Label
+    Silver complete.
+    This boundary records the candidate watermark but deliberately does not
+    commit it while required Gold processing is still absent. A stage failure
+    is recorded as FAILED before the original exception is re-raised.
     """
     config = PipelineConfig(catalog=catalog)
+    # Control tables must exist before creating the RUNNING record; otherwise a
+    # later Bronze or Silver failure would have no durable lifecycle audit row.
     pipeline_runs = DeltaPipelineRunRepository(
         spark=spark,
         config=config,
@@ -278,6 +284,8 @@ def run_tracked_full_load(
     watermarks.ensure_table()
     watermark_before = watermarks.get("github", "issues")
 
+    # This ID is shared by Bronze and every Silver stage. It is the boundary
+    # that prevents one pipeline attempt from consuming another attempt's rows.
     started_run = PipelineRun(
         run_id=run_id_factory().hex,
         source_name="github",
@@ -312,6 +320,8 @@ def run_tracked_full_load(
                 watermark=watermark_before,
             )
 
+        # Every Silver stage reads only the Bronze evidence appended by this
+        # run. Entity tables are reconciled before the Issue-to-Label bridge.
         run_bronze_to_silver(
             spark=spark,
             catalog=catalog,
@@ -323,6 +333,13 @@ def run_tracked_full_load(
             bronze_run_id=started_run.run_id,
         )
         run_bronze_to_silver_labels(
+            spark=spark,
+            catalog=catalog,
+            bronze_run_id=started_run.run_id,
+        )
+        # The bridge runs after Labels so the dimension-to-bridge ordering is
+        # explicit for the future Gold model.
+        run_bronze_to_silver_issue_labels(
             spark=spark,
             catalog=catalog,
             bronze_run_id=started_run.run_id,
@@ -343,6 +360,8 @@ def run_tracked_full_load(
             )
         raise
 
+    # A candidate watermark is recorded for observability, but Gold remains a
+    # required downstream stage before a later lifecycle boundary may commit it.
     pipeline_runs.record_finished(
         started_run.succeed(
             candidate_watermark=result.candidate_watermark,
