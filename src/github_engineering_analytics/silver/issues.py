@@ -374,6 +374,15 @@ class BronzeIssueToSilverTransformer:
             StructField("number", LongType(), nullable=True),
             StructField("title", StringType(), nullable=True),
             StructField("state", StringType(), nullable=True),
+            StructField(
+                "user",
+                StructType(
+                    [
+                        StructField("id", LongType(), nullable=True),
+                    ]
+                ),
+                nullable=True,
+            ),
             StructField("created_at", StringType(), nullable=True),
             StructField("updated_at", StringType(), nullable=True),
             StructField("closed_at", StringType(), nullable=True),
@@ -410,6 +419,9 @@ class BronzeIssueToSilverTransformer:
             )
             .isNotNull()
             .alias("is_pull_request"),
+            # The ID, rather than the mutable login, is the durable author
+            # relationship consumed by Gold's dim_user and fact_issue models.
+            F.col("_payload.user.id").alias("author_user_id"),
             # Tolerant parsing lets the validation below raise one domain error
             # for malformed source timestamps, even when Spark ANSI mode is on.
             F.try_to_timestamp(F.col("_payload.created_at")).alias("created_at"),
@@ -456,6 +468,7 @@ class BronzeIssueToSilverTransformer:
                 "title",
                 "state",
                 "is_pull_request",
+                "author_user_id",
                 "created_at",
                 "updated_at",
                 "closed_at",
@@ -487,6 +500,8 @@ class BronzeIssueToSilverTransformer:
             | (F.length(F.trim(F.col("title"))) == 0)
             | F.col("state").isNull()
             | (F.length(F.trim(F.col("state"))) == 0)
+            | F.col("author_user_id").isNull()
+            | (F.col("author_user_id") <= 0)
             | F.col("repository_owner").isNull()
             | (F.length(F.trim(F.col("repository_owner"))) == 0)
             | F.col("repository_name").isNull()
