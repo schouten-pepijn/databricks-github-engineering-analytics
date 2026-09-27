@@ -180,6 +180,27 @@ def test_tracked_full_load_persists_bronze_silver_and_successful_run(
             .limit(2)
             .collect()
         )
+        # The bridge must carry the same run lineage as its Issue and Label
+        # sources; Gold will consume this relation rather than nested Bronze JSON.
+        silver_issue_label_rows = (
+            integration_spark.table(config.silver_issue_labels_table)
+            .where(
+                (F.col("repository_owner") == "pytest")
+                & (F.col("repository_name") == repository_name)
+                & (F.col("issue_id") == 123)
+                & (F.col("label_id") == label_id)
+            )
+            .select(
+                "issue_id",
+                "label_id",
+                "source_run_id",
+                F.date_format("observed_at", "yyyy-MM-dd'T'HH:mm:ss'Z'").alias(
+                    "observed_at_utc"
+                ),
+            )
+            .limit(2)
+            .collect()
+        )
         pipeline_run_rows = (
             integration_spark.table(config.pipeline_runs_table)
             .where(F.col("run_id") == run_id)
@@ -229,6 +250,14 @@ def test_tracked_full_load_persists_bronze_silver_and_successful_run(
                 "source_run_id": run_id,
             }
         ]
+        assert [row.asDict() for row in silver_issue_label_rows] == [
+            {
+                "issue_id": 123,
+                "label_id": label_id,
+                "source_run_id": run_id,
+                "observed_at_utc": "2026-09-20T12:03:00Z",
+            }
+        ]
         assert len(pipeline_run_rows) == 1
         assert pipeline_run_rows[0].asDict() == {
             "source_name": "github",
@@ -257,6 +286,17 @@ def test_tracked_full_load_persists_bronze_silver_and_successful_run(
             condition=(
                 "repository_owner = 'pytest' "
                 f"AND repository_name = '{repository_name}' "
+                f"AND label_id = {label_id}"
+            )
+        )
+        DeltaTable.forName(
+            integration_spark,
+            config.silver_issue_labels_table,
+        ).delete(
+            condition=(
+                "repository_owner = 'pytest' "
+                f"AND repository_name = '{repository_name}' "
+                "AND issue_id = 123 "
                 f"AND label_id = {label_id}"
             )
         )
@@ -404,6 +444,25 @@ def test_tracked_full_load_uses_stored_watermark_for_incremental_bronze_load(
             .limit(2)
             .collect()
         )
+        silver_issue_label_rows = (
+            integration_spark.table(config.silver_issue_labels_table)
+            .where(
+                (F.col("repository_owner") == "pytest")
+                & (F.col("repository_name") == repository_name)
+                & (F.col("issue_id") == issue_id)
+                & (F.col("label_id") == label_id)
+            )
+            .select(
+                "issue_id",
+                "label_id",
+                "source_run_id",
+                F.date_format("observed_at", "yyyy-MM-dd'T'HH:mm:ss'Z'").alias(
+                    "observed_at_utc"
+                ),
+            )
+            .limit(2)
+            .collect()
+        )
         pipeline_run_rows = (
             integration_spark.table(config.pipeline_runs_table)
             .where(F.col("run_id") == run_id)
@@ -451,6 +510,14 @@ def test_tracked_full_load_uses_stored_watermark_for_incremental_bronze_load(
                 "source_run_id": run_id,
             }
         ]
+        assert [row.asDict() for row in silver_issue_label_rows] == [
+            {
+                "issue_id": issue_id,
+                "label_id": label_id,
+                "source_run_id": run_id,
+                "observed_at_utc": "2026-09-20T12:03:00Z",
+            }
+        ]
         assert [row.asDict() for row in pipeline_run_rows] == [
             {
                 "status": "succeeded",
@@ -478,6 +545,17 @@ def test_tracked_full_load_uses_stored_watermark_for_incremental_bronze_load(
             condition=(
                 "repository_owner = 'pytest' "
                 f"AND repository_name = '{repository_name}' "
+                f"AND label_id = {label_id}"
+            )
+        )
+        DeltaTable.forName(
+            integration_spark,
+            config.silver_issue_labels_table,
+        ).delete(
+            condition=(
+                "repository_owner = 'pytest' "
+                f"AND repository_name = '{repository_name}' "
+                f"AND issue_id = {issue_id} "
                 f"AND label_id = {label_id}"
             )
         )
