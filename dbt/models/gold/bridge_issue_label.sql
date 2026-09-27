@@ -8,8 +8,8 @@
 -- Grain: exactly one current Issue-to-Label relationship per repository-scoped
 -- issue ID and repository-scoped label ID.
 -- This factless bridge resolves the many-to-many relationship between the
--- future fact_issue table and the current Type-1 dim_label dimension.
--- Both hashes must remain aligned with the future fact_issue and dim_label
+-- current fact_issue table and the current Type-1 dim_label dimension.
+-- Both hashes must remain aligned with the fact_issue and dim_label
 -- surrogate-key formulas.
 select
     sha2(

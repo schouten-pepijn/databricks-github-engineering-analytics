@@ -20,10 +20,13 @@ models:
       - name: issue_key
         description: >
           Deterministic SHA-256 key derived from repository_owner,
-          repository_name, and issue_id. It will become the foreign key to the
-          future fact_issue model.
+          repository_name, and issue_id. It is the foreign key to fact_issue.
         data_tests:
           - not_null
+          - relationships:
+              arguments:
+                to: ref("fact_issue")
+                field: issue_key
 
       - name: label_key
         description: >
