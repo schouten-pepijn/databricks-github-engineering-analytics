@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
-import argparse
 import os
 from collections.abc import Mapping
 from dataclasses import dataclass
+from typing import Annotated
 
+import typer
 from databricks.connect import DatabricksSession
 from loguru import logger
 from pyspark.sql import SparkSession
@@ -31,6 +32,13 @@ _SUPPORTED_ENVIRONMENT_VARIABLE_PAIRS = frozenset(
             _DEV_CONFIRMATION_ENVIRONMENT_VARIABLE,
         ),
     }
+)
+
+# These options select an approved variable pair only. ``main`` still verifies
+# the matching confirmation value before opening a Spark session or truncating.
+app = typer.Typer(
+    add_completion=False,
+    help="Destructively empty known GitHub analytics tables in a confirmed catalog.",
 )
 
 
@@ -99,23 +107,29 @@ def main(
     return result
 
 
-def cli() -> None:
-    """Run the catalog reset with one supported environment-variable pair."""
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument(
-        "--catalog-environment-variable",
-        default=_TEST_CATALOG_ENVIRONMENT_VARIABLE,
-    )
-    parser.add_argument(
-        "--confirmation-environment-variable",
-        default=_TEST_CONFIRMATION_ENVIRONMENT_VARIABLE,
-    )
-    arguments = parser.parse_args()
-
+# The reset command historically accepted options without a subcommand; retain
+# that shape so existing Taskfile calls continue to work.
+@app.callback(invoke_without_command=True)
+def _run_cli(
+    catalog_environment_variable: Annotated[
+        str,
+        typer.Option("--catalog-environment-variable"),
+    ] = _TEST_CATALOG_ENVIRONMENT_VARIABLE,
+    confirmation_environment_variable: Annotated[
+        str,
+        typer.Option("--confirmation-environment-variable"),
+    ] = _TEST_CONFIRMATION_ENVIRONMENT_VARIABLE,
+) -> None:
+    """Map explicit CLI options onto the confirmed-catalog reset boundary."""
     main(
-        catalog_environment_variable=arguments.catalog_environment_variable,
-        confirmation_environment_variable=arguments.confirmation_environment_variable,
+        catalog_environment_variable=catalog_environment_variable,
+        confirmation_environment_variable=confirmation_environment_variable,
     )
+
+
+def cli() -> None:
+    """Run the Typer adapter used by the catalog-reset command."""
+    app()
 
 
 def _require_confirmed_catalog(
