@@ -42,6 +42,11 @@ resources:
           email_notifications:
             on_failure:
               - ${workspace.current_user.userName}
+          # Serverless can retry this intentionally failing task. The probe
+          # should demonstrate one actionable alert after the final attempt,
+          # not one email for every retry.
+          notification_settings:
+            alert_on_last_attempt: true
 
           dbt_task:
             source: WORKSPACE
