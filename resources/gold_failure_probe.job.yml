@@ -35,6 +35,13 @@ resources:
           environment_key: dbt
           depends_on:
             - task_key: bronze_silver
+          # The probe deliberately fails after a normal Gold build. Alerting at
+          # the failed task verifies the production alerting boundary even
+          # though the failure finalizer makes the overall job succeed with
+          # failures.
+          email_notifications:
+            on_failure:
+              - ${workspace.current_user.userName}
 
           dbt_task:
             source: WORKSPACE

@@ -18,6 +18,13 @@ resources:
           # replay a partially completed task.
           max_retries: 0
           disable_auto_optimization: true
+          # A handled upstream failure produces a job-level
+          # SUCCESS_WITH_FAILURES result after finalize_failure runs. Databricks
+          # treats that as a successful job result, so alert at each task
+          # boundary rather than relying on job-level on_failure notifications.
+          email_notifications:
+            on_failure:
+              - ${workspace.current_user.userName}
 
           python_wheel_task:
             package_name: github_engineering_analytics
@@ -36,6 +43,9 @@ resources:
           environment_key: dbt
           depends_on:
             - task_key: bronze_silver
+          email_notifications:
+            on_failure:
+              - ${workspace.current_user.userName}
 
           dbt_task:
             source: WORKSPACE
@@ -52,6 +62,9 @@ resources:
           environment_key: python
           depends_on:
             - task_key: build_gold
+          email_notifications:
+            on_failure:
+              - ${workspace.current_user.userName}
 
           python_wheel_task:
             package_name: github_engineering_analytics
@@ -66,6 +79,9 @@ resources:
             - task_key: bronze_silver
             - task_key: build_gold
           run_if: AT_LEAST_ONE_FAILED
+          email_notifications:
+            on_failure:
+              - ${workspace.current_user.userName}
 
           python_wheel_task:
             package_name: github_engineering_analytics
