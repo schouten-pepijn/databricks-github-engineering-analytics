@@ -36,7 +36,7 @@ class SilverIssue:
     """One normalized GitHub issue at the repository-scoped Issue grain.
 
     ``author_user_id`` is the stable GitHub identifier needed to relate an
-    Issue to the global Silver users table and, later, Gold ``dim_user``.
+    Issue to the global Silver users table and Gold ``dim_user``.
     """
 
     repository_owner: str
@@ -199,7 +199,7 @@ class DeltaSilverIssueWriter:
 
     Table grain: one row per repository owner, repository name, and GitHub
     issue ID. Repeated or older source versions cannot create duplicate rows
-    or replace a newer issue state. This entity is the future source of the
+    or replace a newer issue state. This entity is the source of the
     Gold ``fact_issue`` table; nested Labels remain outside this table because
     an Issue can have many Labels.
     """
