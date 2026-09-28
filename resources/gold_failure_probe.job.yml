@@ -1,0 +1,77 @@
+resources:
+  jobs:
+    github_gold_failure_probe:
+      name: "[TEST] GitHub Gold failure-path probe"
+      description: >-
+        TEST ONLY. Proves that a dbt Gold failure records the shared pipeline
+        run as failed without committing its candidate watermark.
+
+      # The probe reads and writes the same Control, Bronze, and Silver tables
+      # as the normal job. Concurrent runs could derive candidates from stale
+      # watermark state.
+      max_concurrent_runs: 1
+
+      tasks:
+        - task_key: bronze_silver
+          environment_key: python
+
+          # Bronze writes are append-only. Do not replay a partially completed
+          # ingestion automatically.
+          max_retries: 0
+          disable_auto_optimization: true
+
+          python_wheel_task:
+            package_name: github_engineering_analytics
+            entry_point: github-engineering-analytics-full-load
+            named_parameters:
+              catalog: ${var.catalog}
+              owner: ${var.github_owner}
+              repository: ${var.github_repository}
+              token-secret-scope: ${var.github_token_secret_scope}
+              token-secret-key: ${var.github_token_secret_key}
+              run-id: "{{job.run_id}}"
+
+        - task_key: build_gold_then_fail
+          environment_key: dbt
+          depends_on:
+            - task_key: bronze_silver
+
+          dbt_task:
+            source: WORKSPACE
+            project_directory: ${workspace.file_path}/dbt
+            warehouse_id: ${var.sql_warehouse_id}
+            catalog: ${var.catalog}
+            schema: github_analytics_gold
+            commands:
+              - dbt test --select source:silver
+              - dbt build --select tag:gold
+              - dbt run-operation fail_gold_gate
+
+        - task_key: finalize_failure
+          environment_key: python
+          depends_on:
+            - task_key: bronze_silver
+            - task_key: build_gold_then_fail
+          run_if: AT_LEAST_ONE_FAILED
+
+          python_wheel_task:
+            package_name: github_engineering_analytics
+            entry_point: github-engineering-analytics-finalize-failure
+            named_parameters:
+              catalog: ${var.catalog}
+              run-id: "{{job.run_id}}"
+              failure-reason: >-
+                Intentional dbt Gold failure for failure-path verification.
+
+      environments:
+        - environment_key: python
+          spec:
+            environment_version: "3"
+            dependencies:
+              - ../dist/*.whl
+
+        - environment_key: dbt
+          spec:
+            environment_version: "3"
+            dependencies:
+              - dbt-databricks==1.12.3
