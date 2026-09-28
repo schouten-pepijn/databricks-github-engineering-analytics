@@ -84,3 +84,32 @@ with this project. It's also possible to interact with it directly using the CLI
    ```
    $ uv run pytest
    ```
+
+
+## Recovering failed pipeline runs
+
+The pipeline has two recovery modes. Choose the mode from the persisted
+`pipeline_runs.status`, not only from the Databricks job result.
+
+| Failure boundary | Expected control status | Safe recovery |
+| --- | --- | --- |
+| Bronze or Silver task | `failed` | Fix the cause and start a new complete job run. Do not repair append-only Bronze. |
+| dbt Gold task | `failed` | Fix the dbt cause and start a new complete job run. The committed watermark remains unchanged. |
+| `finalize_failure` task | `running` | Repair only `finalize_failure` from the original Databricks job run. |
+| `finalize_success` task | `running` | Repair only `finalize_success` from the original Databricks job run. |
+| Completed run | `succeeded` | No action. The success finalizer is idempotent. |
+| Failed run | `failed` | Never repair it into success. Start a new complete job run after fixing the cause. |
+
+Before choosing a recovery action, inspect the durable control record:
+
+```sql
+SELECT
+  run_id,
+  status,
+  started_at,
+  finished_at,
+  watermark_before_value,
+  candidate_watermark_value,
+  error_message
+FROM <catalog>.github_analytics_control.pipeline_runs
+WHERE run_id = '<job_run_id>';
