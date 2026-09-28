@@ -260,7 +260,7 @@ class DeltaSilverLabelWriter:
 
     Table grain: one row per repository owner, repository name, and GitHub
     label ID. ``description`` is the only nullable domain attribute. This
-    table describes Label definitions and is the future source of Gold
+    table describes Label definitions and is the source of Gold
     ``dim_label``; Issue-to-Label membership belongs in the separate relation.
     """
 
