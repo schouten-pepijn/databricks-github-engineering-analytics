@@ -183,3 +183,33 @@ tasks:
       - >-
         uv run dbt build --project-dir dbt --profiles-dir dbt
         --select tag:gold
+
+  monitor:health:test:
+    desc: Show recent TEST pipeline lifecycles and committed watermarks
+    requires:
+      vars:
+        - DATABRICKS_CONFIG_PROFILE
+        - DATABRICKS_TEST_CATALOG
+        - DATABRICKS_SQL_WAREHOUSE_ID
+    cmds:
+      - >-
+        databricks experimental aitools tools query
+        --profile {{.DATABRICKS_CONFIG_PROFILE}}
+        --warehouse {{.DATABRICKS_SQL_WAREHOUSE_ID}}
+        --param catalog={{.DATABRICKS_TEST_CATALOG}}
+        --file scripts/pipeline_health.sql
+
+  monitor:health:dev:
+    desc: Show recent DEV pipeline lifecycles and committed watermarks
+    requires:
+      vars:
+        - DATABRICKS_CONFIG_PROFILE
+        - DATABRICKS_DEV_CATALOG
+        - DATABRICKS_SQL_WAREHOUSE_ID
+    cmds:
+      - >-
+        databricks experimental aitools tools query
+        --profile {{.DATABRICKS_CONFIG_PROFILE}}
+        --warehouse {{.DATABRICKS_SQL_WAREHOUSE_ID}}
+        --param catalog={{.DATABRICKS_DEV_CATALOG}}
+        --file scripts/pipeline_health.sql
