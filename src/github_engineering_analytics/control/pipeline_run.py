@@ -22,8 +22,8 @@ class PipelineRun:
     """Describe one pipeline attempt before it is persisted.
 
     ``candidate_watermark`` is observed during extraction; it is not a
-    committed position. The orchestrator may commit it only after this model
-    transitions to ``SUCCEEDED`` and all downstream processing has completed.
+    committed position. The finalizer may commit it only after all downstream
+    Gold processing has completed, before it persists the ``SUCCEEDED`` state.
 
     The model is immutable so callers retain an accurate record of the run's
     prior state while moving through its lifecycle.
