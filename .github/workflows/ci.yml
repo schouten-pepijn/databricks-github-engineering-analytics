@@ -1,0 +1,59 @@
+name: CI
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    name: Quality, package, and dbt parse
+    runs-on: ubuntu-latest
+
+    # dbt parse renders profiles but does not query Databricks. These are
+    # intentionally invalid, non-secret placeholders for CI-only validation.
+    env:
+      DATABRICKS_TEST_CATALOG: github_engineering_analytics_ci
+      DATABRICKS_HOST: example.cloud.databricks.com
+      DATABRICKS_SQL_HTTP_PATH: /sql/1.0/warehouses/placeholder
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v10
+        with:
+          enable-cache: true
+
+      - name: Install locked development dependencies
+        run: uv sync --locked --dev
+
+      - name: Lint with Ruff
+        run: uv run ruff check .
+
+      - name: Check Ruff formatting
+        run: uv run ruff format --check .
+
+      - name: Run unit tests
+        run: uv run pytest -m "not integration" -v
+
+      - name: Check whitespace errors
+        run: git diff --check
+
+      - name: Build deployable wheel
+        run: uv build --wheel
+
+      - name: Parse dbt project without warehouse access
+        run: uv run dbt parse --project-dir dbt --profiles-dir dbt
