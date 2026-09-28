@@ -1,8 +1,8 @@
 """Coordinate the provisional tracked GitHub Issues Bronze-to-Silver stage.
 
-Gold finalization is deliberately outside this module's current boundary. A
-later orchestration step must commit the candidate watermark only after every
-required Gold model succeeds.
+Gold finalization is deliberately outside this module's boundary. The separate
+finalizer task commits the candidate watermark only after every required Gold
+model succeeds.
 """
 
 from __future__ import annotations
@@ -75,13 +75,13 @@ def run_tracked_full_load(
     selects the overlap-aware incremental route. Bronze, Issues Silver, Users
     Silver, Labels Silver, and Issue-Label Silver must all finish before the
     candidate is persisted. The run then intentionally remains ``RUNNING``:
-    a later Gold-aware finalizer owns the terminal ``SUCCEEDED`` transition and
-    watermark commit. A stage failure is recorded as ``FAILED`` before the
+    the separate Gold-aware finalizer owns the terminal ``SUCCEEDED`` transition
+    and watermark commit. A stage failure is recorded as ``FAILED`` before the
     original exception is re-raised.
     """
     config = PipelineConfig(catalog=catalog)
     # Control tables must exist before creating the RUNNING record; otherwise a
-    # later Bronze or Silver failure would have no durable lifecycle audit row.
+    # Bronze or Silver failure would have no durable lifecycle audit row.
     pipeline_runs = DeltaPipelineRunRepository(spark=spark, config=config)
     pipeline_runs.ensure_table()
     watermarks = DeltaWatermarkRepository(spark=spark, config=config)
@@ -147,7 +147,7 @@ def run_tracked_full_load(
             bronze_run_id=started_run.run_id,
         )
         # The bridge runs after Labels so the dimension-to-bridge ordering is
-        # explicit for the future Gold model.
+        # explicit for the current Gold bridge model.
         run_bronze_to_silver_issue_labels(
             spark=spark,
             catalog=catalog,
