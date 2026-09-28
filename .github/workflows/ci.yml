@@ -14,7 +14,9 @@ permissions:
 jobs:
   quality:
     name: Quality, package, and dbt parse
-    runs-on: ubuntu-latest
+    # Pin the hosted image so CI does not change behavior during the scheduled
+    # ubuntu-latest migration. Upgrade intentionally after validation.
+    runs-on: ubuntu-24.04
 
     # dbt parse renders profiles but does not query Databricks. These are
     # intentionally invalid, non-secret placeholders for CI-only validation.
@@ -33,7 +35,7 @@ jobs:
           python-version: "3.12"
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@v10
+        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
         with:
           enable-cache: true
 
