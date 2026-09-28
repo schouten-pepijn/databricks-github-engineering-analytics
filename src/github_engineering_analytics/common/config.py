@@ -6,7 +6,7 @@ The current physical tables have deliberately distinct responsibilities:
 * Silver exposes the current normalized Issue, User and Label entities.
 * Control stores pipeline state and is never an analytical source.
 
-The future Gold layer will model Silver Issues as ``fact_issue``, Users and
+The dbt-owned Gold layer models Silver Issues as ``fact_issue``, Users and
 Labels as dimensions, and Issue-to-Label associations as a bridge table.
 """
 
@@ -32,7 +32,7 @@ class PipelineConfig:
     def silver_issues_table(self) -> str:
         """Return one current normalized Issue per repository-scoped Issue ID.
 
-        This is the future source for the Gold ``fact_issue`` table.
+        This is the source for the Gold ``fact_issue`` table.
         """
         return f"{self.catalog}.{self.silver_schema}.github_issues"
 
@@ -58,7 +58,7 @@ class PipelineConfig:
     def silver_users_table(self) -> str:
         """Return one current normalized GitHub User per global GitHub user ID.
 
-        This is the future source for the Gold ``dim_user`` dimension.
+        This is the source for the Gold ``dim_user`` dimension.
         """
         return f"{self.catalog}.{self.silver_schema}.github_users"
 
@@ -66,7 +66,7 @@ class PipelineConfig:
     def silver_labels_table(self) -> str:
         """Return one current Label definition per repository-scoped label ID.
 
-        This is the future source for the Gold ``dim_label`` dimension. It
+        This is the source for the Gold ``dim_label`` dimension. It
         describes Labels themselves, not which Issues currently use them.
         """
         return f"{self.catalog}.{self.silver_schema}.github_labels"
@@ -76,6 +76,6 @@ class PipelineConfig:
         """Return current Issue-to-Label relationships at Silver grain.
 
         One row means that one Label is currently assigned to one Issue. This is
-        the future source for Gold ``bridge_issue_label``.
+        the source for Gold ``bridge_issue_label``.
         """
         return f"{self.catalog}.{self.silver_schema}.github_issue_labels"
