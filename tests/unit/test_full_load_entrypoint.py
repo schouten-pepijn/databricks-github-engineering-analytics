@@ -3,6 +3,7 @@ from datetime import UTC, datetime
 from unittest.mock import Mock
 
 import pytest
+from click import unstyle
 from typer.testing import CliRunner
 
 from github_engineering_analytics.bronze.full_load import run_full_load
@@ -312,6 +313,9 @@ def test_cli_help_lists_the_databricks_wheel_options() -> None:
     result = CliRunner().invoke(app, ["--help"])
 
     assert result.exit_code == 0
+    # Rich may add terminal-specific ANSI styling to Typer's generated help text.
+    # Strip only presentation codes before asserting the stable CLI option contract.
+    help_output = unstyle(result.output)
     for option in (
         "--catalog",
         "--owner",
@@ -320,7 +324,7 @@ def test_cli_help_lists_the_databricks_wheel_options() -> None:
         "--token-secret-key",
         "--run-id",
     ):
-        assert option in result.output
+        assert option in help_output
 
 
 def test_cli_disables_typer_standalone_mode_for_databricks(mocker) -> None:
