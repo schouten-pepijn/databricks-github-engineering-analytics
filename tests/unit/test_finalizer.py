@@ -171,3 +171,25 @@ def test_finalize_failed_run_rejects_blank_failure_reason(mocker) -> None:
         )
 
     pipeline_runs.get.assert_not_called()
+
+
+def test_finalize_successful_run_rejects_a_failed_run(mocker) -> None:
+    """Prevent a repair from promoting a failed run to success."""
+    failed_run = make_running_run().fail(
+        error_message="Gold dbt build failed",
+        finished_at=datetime(2026, 9, 20, 12, 5, tzinfo=UTC),
+    )
+    pipeline_runs, watermarks = configure_repositories(mocker, failed_run)
+
+    with pytest.raises(
+        ValueError,
+        match="Cannot finalize failed pipeline run",
+    ):
+        finalize_successful_run(
+            spark=Mock(),
+            catalog="test_catalog",
+            run_id=failed_run.run_id,
+        )
+
+    watermarks.commit_success.assert_not_called()
+    pipeline_runs.record_finished.assert_not_called()
