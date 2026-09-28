@@ -1,1 +1,1 @@
-"""Coordinate Control, Bronze, Silver, and future Gold pipeline boundaries."""
+"""Coordinate Control, Bronze, Silver, and dbt-owned Gold pipeline boundaries."""
