@@ -36,7 +36,7 @@ class SilverIssueLabel:
 
     Grain: one row per repository owner, repository name, issue ID, and label ID.
     Label attributes such as name and color remain owned by ``SilverLabel``.
-    The future persisted relation is the source of Gold ``bridge_issue_label``:
+    The persisted relation is the source of Gold ``bridge_issue_label``:
     it connects Issue facts to Label dimensions without repeating label fields
     on every Issue.
     """
@@ -92,10 +92,10 @@ class SilverIssueLabelTransformation:
     """Hold one latest issue snapshot and its current label relationships.
 
     ``observed_issues`` retains a valid Issue even when its labels array is
-    empty. The future Delta writer uses that scope to remove stale
-    issue-to-label relationships. It is technical reconciliation input, not a
-    separate Silver or Gold table. ``relationships`` is the future persisted
-    Silver relation and the source for Gold ``bridge_issue_label``.
+    empty. The Delta writer uses that scope to remove stale issue-to-label
+    relationships. It is technical reconciliation input, not a separate
+    Silver or Gold table. ``relationships`` is the persisted Silver relation
+    and the source for Gold ``bridge_issue_label``.
     """
 
     observed_issues: DataFrame
@@ -106,7 +106,7 @@ class DeltaSilverIssueLabelWriter:
     """Persist current Issue-to-Label relationships at Silver grain.
 
     One row means one Label currently belongs to one Issue. This relation is
-    the future source for Gold ``bridge_issue_label``.
+    the source for Gold ``bridge_issue_label``.
     """
 
     _RELATIONSHIP_COLUMNS: ClassVar[tuple[str, ...]] = (
