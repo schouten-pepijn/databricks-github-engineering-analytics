@@ -4,7 +4,6 @@ version = "0.4.0"
 authors = [{ name = "pepijnsch@gmail.com" }]
 requires-python = ">=3.12,<3.13"
 dependencies = [
-    "basedpyright>=1.40.2",
     "loguru>=0.7.3",
     # Any dependencies for jobs and pipelines in this project can be added here
     # See also https://docs.databricks.com/dev-tools/bundles/library-dependencies
@@ -25,6 +24,7 @@ github-engineering-analytics-finalize-failure = "github_engineering_analytics.or
 
 [dependency-groups]
 dev = [
+    "basedpyright>=1.40.2",
     "bump-my-version>=1.5.1",
     "pytest",
     "ruff",

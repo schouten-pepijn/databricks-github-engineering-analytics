@@ -25,6 +25,11 @@ tasks:
     cmds:
       - uv run ruff format --check .
 
+  typecheck:
+    desc: Check Python types with basedpyright (errors only)
+    cmds:
+      - uv run basedpyright --level error .
+
   test:unit:
     desc: Run unit tests without Databricks
     cmds:
@@ -66,6 +71,7 @@ tasks:
     deps:
       - lint
       - format:check
+      - typecheck
       - test:unit
     cmds:
       - git diff --check

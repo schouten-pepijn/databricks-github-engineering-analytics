@@ -48,6 +48,9 @@ jobs:
       - name: Check Ruff formatting
         run: uv run ruff format --check .
 
+      - name: Check Python types with basedpyright (errors only)
+        run: uv run basedpyright --level error .
+
       - name: Run unit tests
         run: uv run pytest -m "not integration" -v
 
