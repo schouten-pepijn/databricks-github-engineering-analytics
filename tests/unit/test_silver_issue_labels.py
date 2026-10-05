@@ -7,6 +7,8 @@ import pytest
 
 from github_engineering_analytics.silver.issue_labels import SilverIssueLabel
 
+_DEFAULT_SOURCE_UPDATED_AT = datetime(2026, 9, 20, 11, 30, tzinfo=UTC)
+
 
 def _valid_issue_payload(**overrides: object) -> dict[str, object]:
     """Build a Bronze issue payload containing one valid GitHub label."""
@@ -29,20 +31,18 @@ def _valid_issue_payload(**overrides: object) -> dict[str, object]:
 
 def _from_payload(
     payload: dict[str, object],
-    **overrides: object,
+    *,
+    source_updated_at: datetime = _DEFAULT_SOURCE_UPDATED_AT,
 ) -> tuple[SilverIssueLabel, ...]:
     """Build relation records using valid Bronze metadata by default."""
-    arguments: dict[str, object] = {
-        "repository_owner": "psf",
-        "repository_name": "requests",
-        "issue_id": 1001,
-        "raw_json": json.dumps(payload),
-        "source_updated_at": datetime(2026, 9, 20, 11, 30, tzinfo=UTC),
-        "source_run_id": "run-123",
-    }
-    arguments.update(overrides)
-
-    return SilverIssueLabel.from_bronze_row(**arguments)  # type: ignore[arg-type]
+    return SilverIssueLabel.from_bronze_row(
+        repository_owner="psf",
+        repository_name="requests",
+        issue_id=1001,
+        raw_json=json.dumps(payload),
+        source_updated_at=source_updated_at,
+        source_run_id="run-123",
+    )
 
 
 def test_from_bronze_row_maps_each_label_to_one_issue_relationship() -> None:

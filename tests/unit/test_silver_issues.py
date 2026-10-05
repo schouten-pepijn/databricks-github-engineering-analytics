@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from datetime import UTC, datetime
+from typing import cast
 
 import pytest
 
@@ -29,18 +30,18 @@ def _valid_payload(**overrides: object) -> dict[str, object]:
 
 def _from_payload(
     payload: dict[str, object],
-    **overrides: object,
+    *,
+    repository_owner: str = "psf",
+    repository_name: str = "requests",
+    source_run_id: str = "run-123",
 ) -> SilverIssue:
-    arguments: dict[str, object] = {
-        "repository_owner": "psf",
-        "repository_name": "requests",
-        "issue_id": 1001,
-        "raw_json": json.dumps(payload),
-        "source_run_id": "run-123",
-    }
-    arguments.update(overrides)
-
-    return SilverIssue.from_bronze_row(**arguments)  # type: ignore[arg-type]
+    return SilverIssue.from_bronze_row(
+        repository_owner=repository_owner,
+        repository_name=repository_name,
+        issue_id=1001,
+        raw_json=json.dumps(payload),
+        source_run_id=source_run_id,
+    )
 
 
 def test_from_bronze_row_normalizes_a_valid_issue() -> None:
@@ -128,4 +129,10 @@ def test_from_bronze_row_rejects_invalid_bronze_metadata(
     value: object,
 ) -> None:
     with pytest.raises(ValueError, match=f"{field_name} must be a non-empty string"):
-        _from_payload(_valid_payload(), **{field_name: value})
+        if field_name == "repository_owner":
+            # The cast preserves the deliberately invalid runtime value for this test.
+            _from_payload(_valid_payload(), repository_owner=cast(str, value))
+        elif field_name == "repository_name":
+            _from_payload(_valid_payload(), repository_name=cast(str, value))
+        else:
+            _from_payload(_valid_payload(), source_run_id=cast(str, value))

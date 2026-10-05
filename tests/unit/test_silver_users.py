@@ -7,6 +7,8 @@ import pytest
 
 from github_engineering_analytics.silver.users import SilverUser
 
+_DEFAULT_SOURCE_UPDATED_AT = datetime(2026, 9, 20, 11, 30, tzinfo=UTC)
+
 
 def _validate_issue_payload(**overrides: object) -> dict[str, object]:
     payload: dict[str, object] = {
@@ -25,17 +27,15 @@ def _validate_issue_payload(**overrides: object) -> dict[str, object]:
 
 def _from_payload(
     payload: dict[str, object],
-    **overrides: object,
+    *,
+    source_updated_at: datetime = _DEFAULT_SOURCE_UPDATED_AT,
 ) -> SilverUser:
-    arguments: dict[str, object] = {
-        "raw_json": json.dumps(payload),
-        "source_issue_id": 1001,
-        "source_updated_at": datetime(2026, 9, 20, 11, 30, tzinfo=UTC),
-        "source_run_id": "run-123",
-    }
-    arguments.update(overrides)
-
-    return SilverUser.from_bronze_row(**arguments)  # type: ignore[arg-type]
+    return SilverUser.from_bronze_row(
+        raw_json=json.dumps(payload),
+        source_issue_id=1001,
+        source_updated_at=source_updated_at,
+        source_run_id="run-123",
+    )
 
 
 def test_from_bronze_row_normalizes_a_valid_user() -> None:

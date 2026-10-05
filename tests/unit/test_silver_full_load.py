@@ -73,9 +73,8 @@ def test_run_bronze_to_silver_filters_on_the_bronze_run_id(
     transformer = Mock()
     writer = Mock()
     functions = mocker.patch("github_engineering_analytics.silver.issues_full_load.F")
-    run_id_column = MagicMock()
     filter_condition = Mock()
-    run_id_column.__eq__.return_value = filter_condition
+    run_id_column = MagicMock(**{"__eq__.return_value": filter_condition})
     functions.col.return_value = run_id_column
     spark.table.return_value = bronze
     bronze.where.return_value = scoped_bronze

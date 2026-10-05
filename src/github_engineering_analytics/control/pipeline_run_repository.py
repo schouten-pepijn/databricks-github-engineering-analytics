@@ -328,6 +328,11 @@ class DeltaPipelineRunRepository:
             else None
         )
 
+        error_message_value = row.get("error_message")
+        error_message = (
+            error_message_value if isinstance(error_message_value, str) else None
+        )
+
         return PipelineRun(
             run_id=DeltaPipelineRunRepository._read_required_string(row, "run_id"),
             source_name=DeltaPipelineRunRepository._read_required_string(
@@ -351,9 +356,7 @@ class DeltaPipelineRunRepository:
                 value_key="candidate_watermark_value",
                 overlap_key="candidate_watermark_overlap_seconds",
             ),
-            error_message=row.get("error_message")
-            if isinstance(row.get("error_message"), str)
-            else None,
+            error_message=error_message,
         )
 
     @staticmethod

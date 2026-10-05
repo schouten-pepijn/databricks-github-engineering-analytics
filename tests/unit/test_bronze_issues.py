@@ -11,7 +11,7 @@ from github_engineering_analytics.common.config import PipelineConfig
 
 
 def test_bronze_issue_record_preserves_github_payload() -> None:
-    payload = {
+    payload: dict[str, object] = {
         "id": 123,
         "number": 42,
         "title": "Fix pagination",
@@ -69,56 +69,65 @@ def test_bronze_issue_record_rejects_invalid_required_payload_fields(
 def test_bronze_issue_record_rejects_naive_pipeline_timestamps(
     timestamp_field: str,
 ) -> None:
-    arguments: dict[str, object] = {
-        "repository_owner": "delta-io",
-        "repository_name": "delta",
-        "payload": {"id": 123, "updated_at": "2026-09-20T12:03:00Z"},
-        "run_id": "run-123",
-        "ingested_at": datetime(2026, 9, 20, 12, 5, tzinfo=UTC),
-        "request_watermark": datetime(2026, 9, 20, 11, 55, tzinfo=UTC),
-        "page_or_batch_reference": "page-1",
-    }
-    arguments[timestamp_field] = datetime(2026, 9, 20, 12, 0)
-
     with pytest.raises(ValueError, match=f"{timestamp_field} must be timezone-aware"):
-        BronzeIssueRecord.from_github_payload(**arguments)
+        if timestamp_field == "ingested_at":
+            BronzeIssueRecord.from_github_payload(
+                repository_owner="delta-io",
+                repository_name="delta",
+                payload={"id": 123, "updated_at": "2026-09-20T12:03:00Z"},
+                run_id="run-123",
+                ingested_at=datetime(2026, 9, 20, 12, 0),
+                request_watermark=datetime(2026, 9, 20, 11, 55, tzinfo=UTC),
+                page_or_batch_reference="page-1",
+            )
+        else:
+            BronzeIssueRecord.from_github_payload(
+                repository_owner="delta-io",
+                repository_name="delta",
+                payload={"id": 123, "updated_at": "2026-09-20T12:03:00Z"},
+                run_id="run-123",
+                ingested_at=datetime(2026, 9, 20, 12, 5, tzinfo=UTC),
+                request_watermark=datetime(2026, 9, 20, 12, 0),
+                page_or_batch_reference="page-1",
+            )
 
 
 def test_bronze_issue_record_serializes_equivalent_payloads_deterministically() -> None:
-    first_payload = {
+    first_payload: dict[str, object] = {
         "id": 123,
         "title": "Fix pagination",
         "updated_at": "2026-09-20T12:03:00Z",
     }
-    reordered_payload = {
+    reordered_payload: dict[str, object] = {
         "updated_at": "2026-09-20T12:03:00Z",
         "title": "Fix pagination",
         "id": 123,
-    }
-
-    common_arguments = {
-        "repository_owner": "delta-io",
-        "repository_name": "delta",
-        "run_id": "run-123",
-        "ingested_at": datetime(2026, 9, 20, 12, 5, tzinfo=UTC),
-        "request_watermark": None,
-        "page_or_batch_reference": "page-1",
     }
 
     first_record = BronzeIssueRecord.from_github_payload(
+        repository_owner="delta-io",
+        repository_name="delta",
         payload=first_payload,
-        **common_arguments,
+        run_id="run-123",
+        ingested_at=datetime(2026, 9, 20, 12, 5, tzinfo=UTC),
+        request_watermark=None,
+        page_or_batch_reference="page-1",
     )
     reordered_record = BronzeIssueRecord.from_github_payload(
+        repository_owner="delta-io",
+        repository_name="delta",
         payload=reordered_payload,
-        **common_arguments,
+        run_id="run-123",
+        ingested_at=datetime(2026, 9, 20, 12, 5, tzinfo=UTC),
+        request_watermark=None,
+        page_or_batch_reference="page-1",
     )
 
     assert first_record.raw_json == reordered_record.raw_json
 
 
 def test_bronze_issue_record_rejects_non_json_serializable_payload() -> None:
-    payload = {
+    payload: dict[str, object] = {
         "id": 123,
         "updated_at": "2026-09-20T12:03:00Z",
         "unsupported": object(),

@@ -236,7 +236,7 @@ class GitHubClient:
         repository: str,
         since: datetime | None = None,
         per_page: int = 100,
-    ) -> Iterator[dict]:
+    ) -> Iterator[dict[str, object]]:
         """Iterate over every issue record updated on or after ``since``.
 
         GitHub's issues endpoint also returns pull requests. Retain both raw
