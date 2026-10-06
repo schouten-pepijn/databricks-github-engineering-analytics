@@ -79,3 +79,8 @@ class PipelineConfig:
         the source for Gold ``bridge_issue_label``.
         """
         return f"{self.catalog}.{self.silver_schema}.github_issue_labels"
+
+    @property
+    def replay_manifest_table(self) -> str:
+        """Return immutable replay-input boundaries for diagnosis and replay."""
+        return f"{self.catalog}.{self.control_schema}.replay_manifests"

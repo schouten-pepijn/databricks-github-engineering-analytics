@@ -22,3 +22,6 @@ def test_pipeline_config_builds_table_names():
         config.silver_issue_labels_table
         == "main.github_analytics_silver.github_issue_labels"
     )
+    assert (
+        config.replay_manifest_table == "main.github_analytics_control.replay_manifests"
+    )
