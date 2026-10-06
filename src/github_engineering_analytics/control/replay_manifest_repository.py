@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import UTC
+from datetime import UTC, datetime, timedelta
 from typing import ClassVar
 
 import pyspark.sql.functions as F
@@ -144,6 +144,9 @@ class DeltaReplayManifestRepository:
         rows = (
             self._spark.table(self._table_name)
             .where(F.col("manifest_id") == manifest_id)
+            # Read the instant as epoch microseconds: a Python datetime from
+            # Databricks Connect can arrive in the client's local time zone.
+            .withColumn("cutoff_at_micros", F.unix_micros(F.col("cutoff_at")))
             .limit(2)  # Two rows -> error, because manifest_id is unique
             .collect()
         )
@@ -157,7 +160,6 @@ class DeltaReplayManifestRepository:
             )
 
         row = rows[0]
-        cutoff_at = row["cutoff_at"]
 
         return ReplayManifest(
             manifest_id=row["manifest_id"],
@@ -166,13 +168,8 @@ class DeltaReplayManifestRepository:
             bronze_table=row["bronze_table"],
             bronze_version=row["bronze_version"],
             successful_run_ids=tuple(row["successful_run_ids"]),
-            # In a UTC session PySpark returns a naive datetime holding the UTC
-            # clock value, so attach the zone rather than converting.
-            cutoff_at=(
-                cutoff_at.replace(tzinfo=UTC)
-                if cutoff_at.tzinfo is None
-                else cutoff_at.astimezone(UTC)
-            ),
+            cutoff_at=datetime(1970, 1, 1, tzinfo=UTC)
+            + timedelta(microseconds=row["cutoff_at_micros"]),
             code_commit=row["code_commit"],
             transformation_version=row["transformation_version"],
         )
