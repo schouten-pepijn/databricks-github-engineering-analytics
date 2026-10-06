@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import ClassVar
 
 import pyspark.sql.functions as F
@@ -60,6 +60,16 @@ class DeltaPipelineRunRepository:
             ),
             StructField("error_message", StringType(), nullable=True),
         ]
+    )
+
+    # Timestamp columns that get() reads as epoch microseconds, because a
+    # Python datetime from Databricks Connect can arrive in the client's
+    # local time zone instead of UTC.
+    _TIMESTAMP_COLUMNS: ClassVar[tuple[str, ...]] = (
+        "started_at",
+        "finished_at",
+        "watermark_before_value",
+        "candidate_watermark_value",
     )
 
     def __init__(
@@ -240,9 +250,10 @@ class DeltaPipelineRunRepository:
     def get(self, run_id: str) -> PipelineRun:
         """Return exactly one persisted run for finalization or diagnosis.
 
-        The control table is read in a UTC Spark session, so a naive timestamp
-        returned by PySpark represents a UTC clock value. Converting it here
-        keeps the pure :class:`PipelineRun` boundary timezone-aware.
+        Timestamps are selected as epoch microseconds next to the original
+        columns. That keeps the instant exact whatever time zone the Python
+        client runs in, and keeps the pure :class:`PipelineRun` boundary
+        timezone-aware.
         """
         if not run_id.strip():
             raise ValueError("run_id must not be empty")
@@ -254,6 +265,13 @@ class DeltaPipelineRunRepository:
         rows = (
             self._spark.table(self._table_name)
             .where(F.col("run_id") == run_id)
+            .select(
+                "*",
+                *(
+                    F.unix_micros(F.col(column)).alias(f"{column}_micros")
+                    for column in self._TIMESTAMP_COLUMNS
+                ),
+            )
             .limit(2)
             .collect()
         )
@@ -314,17 +332,10 @@ class DeltaPipelineRunRepository:
                 f"Invalid pipeline run status: {row.get('status')!r}"
             ) from error
 
-        started_at = DeltaPipelineRunRepository._read_timestamp(
-            row.get("started_at"),
-            "started_at",
-        )
-        finished_at_value = row.get("finished_at")
+        started_at = DeltaPipelineRunRepository._read_timestamp(row, "started_at")
         finished_at = (
-            DeltaPipelineRunRepository._read_timestamp(
-                finished_at_value,
-                "finished_at",
-            )
-            if finished_at_value is not None
+            DeltaPipelineRunRepository._read_timestamp(row, "finished_at")
+            if row.get("finished_at_micros") is not None
             else None
         )
 
@@ -367,7 +378,7 @@ class DeltaPipelineRunRepository:
         overlap_key: str,
     ) -> Watermark | None:
         """Read one nullable pair of Delta watermark columns consistently."""
-        value = row.get(value_key)
+        value = row.get(f"{value_key}_micros")
         overlap = row.get(overlap_key)
 
         if value is None and overlap is None:
@@ -383,7 +394,7 @@ class DeltaPipelineRunRepository:
             raise RuntimeError(f"Pipeline run overlap is not an integer: {overlap!r}")
 
         return Watermark(
-            value=DeltaPipelineRunRepository._read_timestamp(value, value_key),
+            value=DeltaPipelineRunRepository._read_timestamp(row, value_key),
             overlap_seconds=overlap,
         )
 
@@ -399,15 +410,15 @@ class DeltaPipelineRunRepository:
         return value
 
     @staticmethod
-    def _read_timestamp(value: object, key: str) -> datetime:
-        """Convert a Spark UTC timestamp into an aware UTC Python timestamp."""
-        if not isinstance(value, datetime):
-            raise RuntimeError(f"Pipeline run {key} is not a datetime: {value!r}")
+    def _read_timestamp(row: dict[str, object], key: str) -> datetime:
+        """Convert a ``<key>_micros`` column into an aware UTC timestamp."""
+        micros = row.get(f"{key}_micros")
+        if not isinstance(micros, int):
+            raise RuntimeError(
+                f"Pipeline run {key} is not epoch microseconds: {micros!r}"
+            )
 
-        if value.tzinfo is None or value.utcoffset() is None:
-            return value.replace(tzinfo=UTC)
-
-        return value.astimezone(UTC)
+        return datetime(1970, 1, 1, tzinfo=UTC) + timedelta(microseconds=micros)
 
     def _require_existing_running_run(self, run_id: str) -> None:
         """Reject missing, duplicated, or already terminal lifecycle rows.

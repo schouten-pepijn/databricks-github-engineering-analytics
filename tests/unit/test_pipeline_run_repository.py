@@ -1,4 +1,4 @@
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from unittest.mock import Mock, patch
 
 import pytest
@@ -24,6 +24,11 @@ def make_repository(
     )
 
     return spark, repository
+
+
+def epoch_micros(value: datetime) -> int:
+    """Return the exact epoch microseconds Spark's unix_micros would produce."""
+    return (value - datetime(1970, 1, 1, tzinfo=UTC)) // timedelta(microseconds=1)
 
 
 def configure_existing_run_statuses(spark: Mock, statuses: list[str]) -> None:
@@ -285,21 +290,31 @@ def test_get_rebuilds_a_running_run_with_utc_watermarks(functions: Mock) -> None
     spark, repository = make_repository()
     functions.col.return_value = Mock()
     row = Mock()
+    # The plain datetime columns are deliberately shifted +2h, like a client
+    # in a local time zone. get() must ignore them and use the *_micros values.
     row.asDict.return_value = {
         "run_id": "run-123",
         "source_name": "github",
         "entity_name": "issues",
         "status": "running",
-        "started_at": datetime(2026, 9, 19, 12, 0),
+        "started_at": datetime(2026, 9, 19, 14, 0),
+        "started_at_micros": epoch_micros(datetime(2026, 9, 19, 12, 0, tzinfo=UTC)),
         "finished_at": None,
-        "watermark_before_value": datetime(2026, 9, 19, 11, 55),
+        "finished_at_micros": None,
+        "watermark_before_value": datetime(2026, 9, 19, 13, 55),
+        "watermark_before_value_micros": epoch_micros(
+            datetime(2026, 9, 19, 11, 55, tzinfo=UTC)
+        ),
         "watermark_before_overlap_seconds": 300,
-        "candidate_watermark_value": datetime(2026, 9, 19, 12, 3),
+        "candidate_watermark_value": datetime(2026, 9, 19, 14, 3),
+        "candidate_watermark_value_micros": epoch_micros(
+            datetime(2026, 9, 19, 12, 3, tzinfo=UTC)
+        ),
         "candidate_watermark_overlap_seconds": 300,
         "error_message": None,
     }
-    query = spark.table.return_value.where.return_value.limit.return_value
-    query.collect.return_value = [row]
+    selected = spark.table.return_value.where.return_value.select.return_value
+    selected.limit.return_value.collect.return_value = [row]
 
     run = repository.get("run-123")
 
