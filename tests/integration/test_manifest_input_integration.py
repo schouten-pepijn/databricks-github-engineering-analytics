@@ -3,9 +3,10 @@
 import os
 from collections.abc import Iterator
 from dataclasses import replace
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
+import pyspark.sql.functions as F
 import pytest
 from delta.tables import DeltaTable
 from pyspark.sql import SparkSession
@@ -19,6 +20,9 @@ from github_engineering_analytics.common.delta_contracts import (
     quote_multipart_identifier,
 )
 from github_engineering_analytics.control.replay_manifest import ReplayManifest
+from github_engineering_analytics.orchestration.manifest_builder import (
+    resolve_bronze_version,
+)
 
 pytestmark = pytest.mark.integration
 
@@ -125,3 +129,45 @@ def test_run_without_rows_at_version_fails_explicitly(
 
     with pytest.raises(ManifestInputUnavailableError, match="run-404"):
         read_manifest_input(integration_spark, manifest)
+
+
+def commit_time(spark: SparkSession, table: str, version: int) -> datetime:
+    """Commit time of one Delta version as an aware UTC datetime.
+
+    Read as epoch microseconds, not as a Python datetime, because Databricks
+    Connect can return a datetime in the client's local time zone.
+    """
+    row = (
+        DeltaTable.forName(spark, table)
+        .history()
+        .where(F.col("version") == version)
+        .select(F.unix_micros("timestamp").alias("micros"))
+        .collect()[0]
+    )
+    return datetime(1970, 1, 1, tzinfo=UTC) + timedelta(microseconds=row["micros"])
+
+
+def test_resolve_bronze_version_follows_commit_times(
+    integration_spark: SparkSession, bronze_table: str
+) -> None:
+    append_run(integration_spark, bronze_table, "run-001", [1])
+    v1 = latest_version(integration_spark, bronze_table)
+    append_run(integration_spark, bronze_table, "run-002", [2])
+    v2 = latest_version(integration_spark, bronze_table)
+
+    at_v1 = commit_time(integration_spark, bronze_table, v1)
+    at_v2 = commit_time(integration_spark, bronze_table, v2)
+
+    # The comparison is inclusive: a cutoff exactly at a commit picks that commit.
+    assert resolve_bronze_version(integration_spark, bronze_table, at_v1) == v1
+    assert resolve_bronze_version(integration_spark, bronze_table, at_v2) == v2
+    # Just before the second commit, the first one is still the newest.
+    just_before_v2 = at_v2 - timedelta(milliseconds=1)
+    assert resolve_bronze_version(integration_spark, bronze_table, just_before_v2) == v1
+
+    # Before the table existed, no commit qualifies.
+    before_everything = commit_time(integration_spark, bronze_table, 0) - timedelta(
+        seconds=1
+    )
+    with pytest.raises(ManifestInputUnavailableError, match="no Delta commit"):
+        resolve_bronze_version(integration_spark, bronze_table, before_everything)
