@@ -22,8 +22,10 @@ def read_manifest_input(
 ) -> DataFrame:
     """Return the Bronze rows frozen by a manifest, or fail before any write.
 
-    The result is pinned to ``manifest.bronze_version`` with Delta time travel,
-    so appends made after that version cannot change it.
+    This is how a manual replay turns a manifest into data; the normal pipeline
+    run never calls it. The result is pinned to ``manifest.bronze_version``
+    with Delta time travel, so appends made after that version cannot change
+    it. Rows of runs that are not listed in the manifest stay out.
     """
     try:
         # Delta time travel: read the table as it was at one commit version.

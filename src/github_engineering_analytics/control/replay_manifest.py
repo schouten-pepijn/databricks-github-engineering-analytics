@@ -1,4 +1,4 @@
-"""Immutable input boundary for one reproducible Bronze replay."""
+"""Immutable input boundary for one manual, reproducible Bronze replay."""
 
 from __future__ import annotations
 
@@ -8,12 +8,26 @@ from datetime import UTC, datetime
 
 @dataclass(frozen=True)
 class ReplayManifest:
-    """Identify the exact Bronze input accepted for one replay.
+    """Lock one past Bronze input so a manual replay can repeat it exactly.
 
-    The manifest freezes both the selected extraction attempts and the Delta
-    table version that contains them. It is deliberately separate from the
-    source watermark: creating or using a manifest must never advance source
-    extraction progress.
+    A manifest is a recipe card, not part of the live pipeline. The normal
+    pipeline run never reads or writes it. It is created on demand, after the
+    fact, and later handed (by ``manifest_id``) to a manually started replay
+    job. Bronze keeps growing; the manifest is what lets the replay read the
+    same rows today, next week, or after more appends.
+
+    What it locks (the input, not the output):
+        - Which rows: ``bronze_table`` at Delta ``bronze_version`` (time
+          travel), limited to this repository's ``successful_run_ids``.
+        - Up to when: ``cutoff_at`` is the upper bound for accepted Bronze
+          commits.
+        - With which code: ``code_commit`` and ``transformation_version``.
+
+    What it does not do:
+        - It does not change what the live pipeline extracts or writes.
+        - It is deliberately separate from the source watermark: creating or
+          using a manifest must never advance source extraction progress.
+        - It never calls GitHub. A replay rebuilds state from stored Bronze.
     """
 
     manifest_id: str

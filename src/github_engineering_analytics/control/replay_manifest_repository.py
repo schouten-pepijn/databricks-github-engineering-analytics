@@ -26,7 +26,13 @@ from github_engineering_analytics.control.replay_manifest import ReplayManifest
 
 
 class DeltaReplayManifestRepository:
-    """Insert-only storage: a manifest_id once written, never changes."""
+    """Insert-only storage: a manifest_id once written, never changes.
+
+    A manifest locks the input of a manual replay, so editing one afterwards
+    would silently change what that replay reads. Each ID therefore stays tied
+    to its original content. These rows are control data for replays only; the
+    normal pipeline run does not use this table.
+    """
 
     # Explicit schema so Spark does not guess types. Keep in sync with
     # the CREATE TABLE statement in ensure_table().
