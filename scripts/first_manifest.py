@@ -33,6 +33,11 @@ def check(condition: bool, message: str) -> None:
         raise SystemExit(f"CHECK FAILED: {message}")
 
 
+def first_line(error: BaseException) -> str:
+    """Return only the first line of an error; Delta appends a JVM stacktrace."""
+    return str(error.__cause__ or error).splitlines()[0]
+
+
 def main(run_id: str) -> None:
     """Create and verify one manifest for a successful TEST pipeline run."""
     spark: SparkSession = (
@@ -43,6 +48,7 @@ def main(run_id: str) -> None:
     config = PipelineConfig(catalog="github_engineering_analytics_test")
     runs = DeltaPipelineRunRepository(spark, config)
     manifests = DeltaReplayManifestRepository(spark, config)
+    manifests.ensure_table()
     watermarks = DeltaWatermarkRepository(spark, config)
 
     run = runs.get(run_id)
@@ -87,17 +93,25 @@ def main(run_id: str) -> None:
         "repeating the same manifest build must not add a row",
     )
 
-    # An unavailable Delta version must fail explicitly without another manifest.
-    unavailable = replace(
-        manifest,
-        bronze_version=manifest.bronze_version + 1_000_000,
-    )
+    # Two different Delta errors must both surface as the same domain error.
+    # A version that never existed:
+    missing = replace(manifest, bronze_version=manifest.bronze_version + 1_000_000)
     try:
-        read_manifest_input(spark, unavailable).count()
+        read_manifest_input(spark, missing).count()
     except ManifestInputUnavailableError as error:
-        print("expected failure:", error)
+        print("expected failure (missing version):", first_line(error))
     else:
-        raise SystemExit("CHECK FAILED: expected ManifestInputUnavailableError")
+        raise SystemExit("CHECK FAILED: missing version must not be readable")
+
+    # A version that is still in the Delta history but past the retention
+    # window (version 1 dates from 2026-09-26):
+    expired = replace(manifest, bronze_version=1)
+    try:
+        read_manifest_input(spark, expired).count()
+    except ManifestInputUnavailableError as error:
+        print("expected failure (expired version):", first_line(error))
+    else:
+        raise SystemExit("CHECK FAILED: expired version must not be readable")
 
     check(
         manifests.get(manifest.manifest_id) == stored_manifest == manifest,
