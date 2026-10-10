@@ -1,8 +1,11 @@
 """Live Spark integration coverage for Bronze-to-Silver issue transformation."""
 
+import os
 from datetime import UTC, datetime
+from uuid import uuid4
 
 import pytest
+from delta.tables import DeltaTable
 from pyspark.sql import SparkSession
 from pyspark.sql.types import (
     LongType,
@@ -12,6 +15,11 @@ from pyspark.sql.types import (
     TimestampType,
 )
 
+from github_engineering_analytics.bronze.manifest_input import read_manifest_input
+from github_engineering_analytics.common.delta_contracts import (
+    quote_multipart_identifier,
+)
+from github_engineering_analytics.control.replay_manifest import ReplayManifest
 from github_engineering_analytics.silver.issues import (
     BronzeIssueToSilverTransformer,
 )
@@ -53,6 +61,71 @@ def _bronze_row(
         ingested_at,
         batch_reference,
     )
+
+
+def test_manifest_input_flows_into_issue_silver_contract(
+    integration_spark: SparkSession,
+) -> None:
+    """Read one frozen Bronze row and normalize it to the Silver contract."""
+    catalog = os.environ["DATABRICKS_TEST_CATALOG"]
+    bronze_table = f"{catalog}.github_analytics_bronze.pytest_replay_{uuid4().hex}"
+    bronze_schema = quote_multipart_identifier(f"{catalog}.github_analytics_bronze")
+    integration_spark.sql(f"CREATE SCHEMA IF NOT EXISTS {bronze_schema}")
+
+    bronze = integration_spark.createDataFrame(
+        [
+            _bronze_row(
+                issue_id=1001,
+                source_updated_at=datetime(2026, 9, 20, 11, 0, tzinfo=UTC),
+                raw_json=(
+                    '{"id":1001,"number":42,"title":"Replay lesson",'
+                    '"state":"open","user":{"id":2001},'
+                    '"created_at":"2026-09-20T10:00:00Z",'
+                    '"updated_at":"2026-09-20T11:00:00Z","closed_at":null}'
+                ),
+                run_id="fixture-run-1",
+                ingested_at=datetime(2026, 9, 20, 11, 1, tzinfo=UTC),
+                batch_reference="fixture-page-1",
+            )
+        ],
+        schema=_BRONZE_TEST_SCHEMA,
+    )
+
+    try:
+        bronze.write.format("delta").mode("error").saveAsTable(bronze_table)
+        version = (
+            DeltaTable.forName(integration_spark, bronze_table)
+            .history(1)
+            .collect()[0]["version"]
+        )
+        manifest = ReplayManifest(
+            manifest_id="fixture-manifest-1",
+            repository_owner="pytest",
+            repository_name="silver-transformer",
+            bronze_table=bronze_table,
+            bronze_version=version,
+            successful_run_ids=("fixture-run-1",),
+            cutoff_at=datetime(2026, 9, 20, 12, 0, tzinfo=UTC),
+            code_commit="fixture",
+            transformation_version="v1",
+        )
+
+        frozen_input = read_manifest_input(integration_spark, manifest)
+        silver_rows = BronzeIssueToSilverTransformer().transform(frozen_input).collect()
+
+        assert len(silver_rows) == 1
+        row = silver_rows[0]
+        assert (row.issue_id, row.issue_number, row.title, row.state) == (
+            1001,
+            42,
+            "Replay lesson",
+            "open",
+        )
+        assert row.source_run_id == "fixture-run-1"
+    finally:
+        integration_spark.sql(
+            f"DROP TABLE IF EXISTS {quote_multipart_identifier(bronze_table)}"
+        )
 
 
 def test_transform_selects_the_latest_issue_and_classifies_pull_requests(
