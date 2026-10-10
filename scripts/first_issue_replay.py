@@ -64,13 +64,16 @@ def main(manifest_id: str, execution_id: str) -> None:
     )
 
     # Error if this execution ID already has an output; never overwrite a result.
-    candidate.write.format("delta").mode("errorifexists").saveAsTable(
+    # Databricks Connect only knows the mode names append, overwrite, error and
+    # ignore; "errorifexists" is rejected there.
+    candidate.write.format("delta").mode("error").saveAsTable(
         quote_multipart_identifier(target_table)
     )
     stored_rows = spark.table(target_table).count()
     if stored_rows != candidate_rows:
+        # The table stays as evidence, so this execution ID cannot be reused.
         raise RuntimeError(
-            f"candidate row count changed on write: "
+            f"candidate row count changed on write for {target_table}: "
             f"{candidate_rows} transformed, {stored_rows} stored"
         )
 
