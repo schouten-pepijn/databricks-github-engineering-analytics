@@ -1,7 +1,8 @@
-"""One-off Sprint 1 proof against the TEST catalog (writes one manifest row)."""
+"""Prove manifest creation and replay-input reads against the TEST catalog."""
 
+import argparse
 import subprocess
-from datetime import UTC, datetime
+from dataclasses import replace
 
 from databricks.connect import DatabricksSession
 from pyspark.sql import SparkSession
@@ -18,35 +19,43 @@ from github_engineering_analytics.control.replay_manifest import ReplayManifest
 from github_engineering_analytics.control.replay_manifest_repository import (
     DeltaReplayManifestRepository,
 )
+from github_engineering_analytics.control.watermark_repository import (
+    DeltaWatermarkRepository,
+)
 from github_engineering_analytics.orchestration.manifest_builder import (
     build_replay_manifest,
 )
 
-RUN_IDS = ["937907479861126"]
-
 
 def check(condition: bool, message: str) -> None:
-    """Fail loudly. Unlike assert, this is not removed by ``python -O``."""
+    """Fail loudly; unlike assert, this check remains active under python -O."""
     if not condition:
         raise SystemExit(f"CHECK FAILED: {message}")
 
 
-def main() -> None:
+def main(run_id: str) -> None:
+    """Create and verify one manifest for a successful TEST pipeline run."""
     spark: SparkSession = (
         DatabricksSession.builder.profile("databricks-dev").serverless().getOrCreate()
     )
-    # The repositories refuse to run unless the session time zone is UTC.
     spark.conf.set("spark.sql.session.timeZone", "UTC")
 
     config = PipelineConfig(catalog="github_engineering_analytics_test")
     runs = DeltaPipelineRunRepository(spark, config)
     manifests = DeltaReplayManifestRepository(spark, config)
-    manifests.ensure_table()
-    commit = subprocess.check_output(
+    watermarks = DeltaWatermarkRepository(spark, config)
+
+    run = runs.get(run_id)
+    if run.finished_at is None:
+        raise SystemExit(f"CHECK FAILED: run {run_id} has no finish time")
+    cutoff_at = run.finished_at
+    watermark_before = watermarks.get("github", "issues")
+    manifest_count_before = spark.table(config.replay_manifest_table).count()
+    code_commit = subprocess.check_output(
         ["git", "rev-parse", "--short", "HEAD"], text=True
     ).strip()
 
-    def build(cutoff_at: datetime) -> ReplayManifest:
+    def build() -> ReplayManifest:
         return build_replay_manifest(
             spark=spark,
             runs=runs,
@@ -54,38 +63,68 @@ def main() -> None:
             repository_owner="psf",
             repository_name="requests",
             bronze_table=config.bronze_issues_table,
-            successful_run_ids=RUN_IDS,
+            successful_run_ids=[run_id],
             cutoff_at=cutoff_at,
-            code_commit=commit,
+            code_commit=code_commit,
             transformation_version="v1",
         )
 
-    def count_manifests() -> int:
-        return spark.table(config.replay_manifest_table).count()
+    manifest = build()
+    stored_manifest = manifests.get(manifest.manifest_id)
+    frozen_rows = read_manifest_input(spark, manifest).count()
+    check(frozen_rows > 0, "manifest input must contain Bronze rows")
 
-    # Case 1: success
-    before = count_manifests()
-    now = datetime.now(UTC)  # one value, so both builds describe the same input
-    manifest = build(now)
-    print("created:", manifest)
-    rows_frozen = read_manifest_input(spark, manifest).count()
-    print("rows frozen:", rows_frozen)
-    check(rows_frozen == 2, f"expected 2 frozen rows, got {rows_frozen}")
-    check(manifests.get(manifest.manifest_id) == manifest, "stored manifest differs")
-    check(count_manifests() == before + 1, "first build should add one row")
-    build(now)  # same inputs again -> same ID -> idempotent no-op
-    check(count_manifests() == before + 1, "repeat build must not add a row")
+    count_after_first_build = spark.table(config.replay_manifest_table).count()
+    check(
+        count_after_first_build in {manifest_count_before, manifest_count_before + 1},
+        "manifest create must insert at most one row",
+    )
 
-    # Case 2: expired input must fail before any write
+    # Same run finish time and inputs produce the same manifest ID on retry.
+    build()
+    check(
+        spark.table(config.replay_manifest_table).count() == count_after_first_build,
+        "repeating the same manifest build must not add a row",
+    )
+
+    # An unavailable Delta version must fail explicitly without another manifest.
+    unavailable = replace(
+        manifest,
+        bronze_version=manifest.bronze_version + 1_000_000,
+    )
     try:
-        build(datetime(2026, 9, 28, 21, 0, tzinfo=UTC))
+        read_manifest_input(spark, unavailable).count()
     except ManifestInputUnavailableError as error:
-        print("expected failure:", error.__cause__ or error)
+        print("expected failure:", error)
     else:
         raise SystemExit("CHECK FAILED: expected ManifestInputUnavailableError")
-    check(count_manifests() == before + 1, "failed build must not store a manifest")
-    print("OK")
+
+    check(
+        manifests.get(manifest.manifest_id) == stored_manifest == manifest,
+        "stored manifest differs from the manifest that was built",
+    )
+    check(
+        spark.table(config.replay_manifest_table).count() == count_after_first_build,
+        "failed input read must not add a manifest",
+    )
+    check(
+        watermarks.get("github", "issues") == watermark_before,
+        "manifest creation must not change the extraction watermark",
+    )
+
+    print(
+        {
+            "manifest_id": manifest.manifest_id,
+            "run_id": run_id,
+            "bronze_version": manifest.bronze_version,
+            "frozen_rows": frozen_rows,
+            "watermark_unchanged": True,
+            "idempotent_repeat": True,
+        }
+    )
 
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--run-id", required=True)
+    main(parser.parse_args().run_id)
