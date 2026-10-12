@@ -178,4 +178,103 @@ def test_cli_passes_the_dev_environment_variable_pair_to_main(mocker) -> None:
     reset_main.assert_called_once_with(
         catalog_environment_variable="DATABRICKS_DEV_CATALOG",
         confirmation_environment_variable="CONFIRM_DEV_CATALOG_RESET",
+        include_all=False,
     )
+
+
+def test_cli_include_all_flag_is_passed_to_main(mocker) -> None:
+    reset_main = mocker.patch(
+        "github_engineering_analytics.common.catalog_reset.main",
+    )
+    result = CliRunner().invoke(app, ["--include-all"])
+
+    assert result.exit_code == 0
+    reset_main.assert_called_once_with(
+        catalog_environment_variable="DATABRICKS_TEST_CATALOG",
+        confirmation_environment_variable="CONFIRM_TEST_CATALOG_RESET",
+        include_all=True,
+    )
+
+
+_PYTHON_OWNED_TABLES = (
+    "test_catalog.github_analytics_bronze.github_issues_raw",
+    "test_catalog.github_analytics_silver.github_issues",
+    "test_catalog.github_analytics_silver.github_users",
+    "test_catalog.github_analytics_silver.github_labels",
+    "test_catalog.github_analytics_silver.github_issue_labels",
+    "test_catalog.github_analytics_control.ingestion_watermark",
+    "test_catalog.github_analytics_control.pipeline_runs",
+)
+_GOLD_AND_REPLAY_TABLES = (
+    "test_catalog.github_analytics_gold.dim_date",
+    "test_catalog.github_analytics_gold.dim_repository",
+    "test_catalog.github_analytics_gold.dim_user",
+    "test_catalog.github_analytics_gold.dim_label",
+    "test_catalog.github_analytics_gold.bridge_issue_label",
+    "test_catalog.github_analytics_gold.fact_issue",
+    "test_catalog.github_analytics_gold.smoke_connection",
+    "test_catalog.github_analytics_control.replay_manifests",
+)
+
+
+def test_default_reset_leaves_gold_and_replay_manifests_alone() -> None:
+    spark = Mock()
+    spark.catalog.tableExists.return_value = True
+
+    result = reset_catalog(spark=spark, catalog="test_catalog")
+
+    assert result.truncated_tables == _PYTHON_OWNED_TABLES
+    assert not any(
+        "gold" in name or "replay_manifests" in name for name in result.truncated_tables
+    )
+
+
+def test_include_all_also_truncates_gold_and_replay_manifests() -> None:
+    spark = Mock()
+    spark.catalog.tableExists.return_value = True
+
+    result = reset_catalog(spark=spark, catalog="test_catalog", include_all=True)
+
+    assert result.truncated_tables == _PYTHON_OWNED_TABLES + _GOLD_AND_REPLAY_TABLES
+    assert result.skipped_tables == ()
+    assert call(
+        "TRUNCATE TABLE `test_catalog`.`github_analytics_gold`.`fact_issue`"
+    ) in (spark.sql.call_args_list)
+    assert call(
+        "TRUNCATE TABLE `test_catalog`.`github_analytics_control`.`replay_manifests`"
+    ) in (spark.sql.call_args_list)
+
+
+def test_include_all_skips_relations_that_do_not_exist() -> None:
+    spark = Mock()
+    # DEV has no smoke model and no replay manifests table.
+    spark.catalog.tableExists.side_effect = lambda name: (
+        not name.endswith(("smoke_connection", "replay_manifests"))
+    )
+
+    result = reset_catalog(spark=spark, catalog="test_catalog", include_all=True)
+
+    assert result.skipped_tables == (
+        "test_catalog.github_analytics_gold.smoke_connection",
+        "test_catalog.github_analytics_control.replay_manifests",
+    )
+    assert len(result.truncated_tables) == 13
+
+
+def test_main_forwards_include_all_to_the_reset(mocker) -> None:
+    spark = Mock()
+    spark.catalog.tableExists.return_value = False
+    mocker.patch(
+        "github_engineering_analytics.common.catalog_reset._get_or_create_spark",
+        return_value=spark,
+    )
+
+    result = main(
+        {
+            "DATABRICKS_TEST_CATALOG": "test_catalog",
+            "CONFIRM_TEST_CATALOG_RESET": "test_catalog",
+        },
+        include_all=True,
+    )
+
+    assert result.skipped_tables == _PYTHON_OWNED_TABLES + _GOLD_AND_REPLAY_TABLES

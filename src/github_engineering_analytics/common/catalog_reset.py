@@ -34,6 +34,19 @@ _SUPPORTED_ENVIRONMENT_VARIABLE_PAIRS = frozenset(
     }
 )
 
+# Gold relations are dbt models, so their names are defined by dbt rather than by
+# PipelineConfig. A relation that does not exist in a catalog (for example the
+# TEST-only smoke model) is skipped, exactly like any other absent table.
+_GOLD_RELATIONS = (
+    "dim_date",
+    "dim_repository",
+    "dim_user",
+    "dim_label",
+    "bridge_issue_label",
+    "fact_issue",
+    "smoke_connection",
+)
+
 # These options select an approved variable pair only. ``main`` still verifies
 # the matching confirmation value before opening a Spark session or truncating.
 app = typer.Typer(
@@ -54,15 +67,20 @@ def reset_catalog(
     *,
     spark: SparkSession,
     catalog: str,
+    include_all: bool = False,
 ) -> CatalogResetResult:
-    """Truncate only the known project tables in one explicitly supplied catalog."""
+    """Truncate only the known project tables in one explicitly supplied catalog.
+
+    By default only the Python-owned tables are reset. ``include_all`` also
+    truncates the dbt-owned Gold relations and the replay manifests.
+    """
     config = PipelineConfig(
         catalog=_require_single_identifier(catalog, environment_variable="catalog")
     )
     truncated_tables: list[str] = []
     skipped_tables: list[str] = []
 
-    for table_name in _known_table_names(config):
+    for table_name in _known_table_names(config, include_all=include_all):
         if not spark.catalog.tableExists(table_name):
             skipped_tables.append(table_name)
             logger.bind(catalog=catalog, table_name=table_name).info(
@@ -87,6 +105,7 @@ def main(
     *,
     catalog_environment_variable: str = _TEST_CATALOG_ENVIRONMENT_VARIABLE,
     confirmation_environment_variable: str = _TEST_CONFIRMATION_ENVIRONMENT_VARIABLE,
+    include_all: bool = False,
 ) -> CatalogResetResult:
     """Reset one confirmed DEV or test catalog through Databricks Connect."""
     settings = os.environ if environment is None else environment
@@ -96,10 +115,11 @@ def main(
         confirmation_environment_variable=confirmation_environment_variable,
     )
     spark = _get_or_create_spark(settings)
-    result = reset_catalog(spark=spark, catalog=catalog)
+    result = reset_catalog(spark=spark, catalog=catalog, include_all=include_all)
 
     logger.bind(
         catalog=catalog,
+        include_all=include_all,
         truncated_tables=result.truncated_tables,
         skipped_tables=result.skipped_tables,
     ).info("Completed destructive catalog reset.")
@@ -119,11 +139,19 @@ def _run_cli(
         str,
         typer.Option("--confirmation-environment-variable"),
     ] = _TEST_CONFIRMATION_ENVIRONMENT_VARIABLE,
+    include_all: Annotated[
+        bool,
+        typer.Option(
+            "--include-all",
+            help="Also truncate the dbt-owned Gold relations and replay manifests.",
+        ),
+    ] = False,
 ) -> None:
     """Map explicit CLI options onto the confirmed-catalog reset boundary."""
     main(
         catalog_environment_variable=catalog_environment_variable,
         confirmation_environment_variable=confirmation_environment_variable,
+        include_all=include_all,
     )
 
 
@@ -177,13 +205,19 @@ def _get_or_create_spark(environment: Mapping[str, str]) -> SparkSession:
     return builder.getOrCreate()
 
 
-def _known_table_names(config: PipelineConfig) -> tuple[str, ...]:
+def _known_table_names(
+    config: PipelineConfig,
+    *,
+    include_all: bool = False,
+) -> tuple[str, ...]:
     """Return only tables whose live reset behavior is currently supported.
 
     Entities still under construction are added only after their persistence
-    and test-cleanup semantics are complete.
+    and test-cleanup semantics are complete. ``include_all`` adds the dbt-owned
+    Gold relations and the replay manifests, which the default reset leaves alone.
+    V2-min replay tables are never listed here: remove them by exact name.
     """
-    return (
+    python_owned_tables = (
         config.bronze_issues_table,
         config.silver_issues_table,
         config.silver_users_table,
@@ -192,6 +226,14 @@ def _known_table_names(config: PipelineConfig) -> tuple[str, ...]:
         config.watermark_table,
         config.pipeline_runs_table,
     )
+    if not include_all:
+        return python_owned_tables
+
+    gold_tables = tuple(
+        f"{config.catalog}.{config.gold_schema}.{relation}"
+        for relation in _GOLD_RELATIONS
+    )
+    return (*python_owned_tables, *gold_tables, config.replay_manifest_table)
 
 
 def _require_single_identifier(identifier: str, environment_variable: str) -> str:

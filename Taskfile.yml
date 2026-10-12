@@ -66,6 +66,32 @@ tasks:
         --catalog-environment-variable DATABRICKS_DEV_CATALOG
         --confirmation-environment-variable CONFIRM_DEV_CATALOG_RESET
 
+  test:reset-all:
+    desc: >-
+      DESTRUCTIVE: like test:reset-data, and also truncate the dbt-owned Gold
+      relations and the replay manifests in the confirmed test catalog
+    requires:
+      vars:
+        - DATABRICKS_TEST_CATALOG
+        - CONFIRM_TEST_CATALOG_RESET
+    cmds:
+      - uv run python -m github_engineering_analytics.common.catalog_reset --include-all
+
+  dev:reset-all:
+    desc: >-
+      DESTRUCTIVE: like dev:reset-data, and also truncate the dbt-owned Gold
+      relations and the replay manifests in the confirmed DEV catalog
+    requires:
+      vars:
+        - DATABRICKS_DEV_CATALOG
+        - CONFIRM_DEV_CATALOG_RESET
+    cmds:
+      - >-
+        uv run python -m github_engineering_analytics.common.catalog_reset
+        --catalog-environment-variable DATABRICKS_DEV_CATALOG
+        --confirmation-environment-variable CONFIRM_DEV_CATALOG_RESET
+        --include-all
+
   check:
     desc: Run all local quality checks
     deps:
