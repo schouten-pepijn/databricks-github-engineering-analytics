@@ -154,6 +154,8 @@ class DeltaWatermarkRepository:
             operation="reading or writing watermarks",
         )
 
+        # Validate the audit fields before touching Delta, so a bad call fails
+        # with a clear message instead of writing a half-filled row.
         if not watermark_column.strip():
             raise ValueError("watermark_column must not be empty")
 
@@ -163,6 +165,8 @@ class DeltaWatermarkRepository:
         if committed_at.tzinfo is None or committed_at.utcoffset() is None:
             raise ValueError("committed_at must be timezone-aware")
 
+        # A one-row DataFrame that holds the candidate position. The explicit
+        # schema fixes the column types instead of letting Spark guess them.
         source = self._spark.createDataFrame(
             [
                 (
@@ -183,6 +187,8 @@ class DeltaWatermarkRepository:
             self._table_name,
         )
 
+        # MERGE looks the row up by (source, entity) and then decides what to do:
+        # update it, insert it, or leave it untouched.
         (
             target.alias("target")
             .merge(
@@ -192,6 +198,9 @@ class DeltaWatermarkRepository:
                     "AND target.entity_name = source.entity_name"
                 ),
             )
+            # ">=" rather than ">": committing the same value again is a harmless
+            # retry, while an older value (a run that finished out of order)
+            # matches no rule, so the stored position can never move backwards.
             .whenMatchedUpdate(
                 condition=("source.watermark_value >= target.watermark_value"),
                 set={
@@ -202,6 +211,7 @@ class DeltaWatermarkRepository:
                     "updated_at": "source.updated_at",
                 },
             )
+            # No row yet for this source and entity: the very first commit.
             .whenNotMatchedInsert(
                 values={
                     "source_name": "source.source_name",

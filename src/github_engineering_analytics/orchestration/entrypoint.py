@@ -146,15 +146,19 @@ def resolve_github_token(
     A direct token may be used for local development. Deployed jobs use the
     secret scope/key reference and retrieve the value only inside Databricks.
     """
+    # 1. A token passed in directly (local development).
     if settings.github_token is not None:
         return settings.github_token
 
     scope = settings.github_token_secret_scope
     key = settings.github_token_secret_key
 
+    # 2. No token and no secret reference: anonymous access. That is enough for
+    #    a public repository, but GitHub applies a much lower rate limit.
     if scope is None and key is None:
         return None
 
+    # 3. A secret reference needs both parts; one without the other is a mistake.
     if scope is None or key is None:
         raise ValueError(
             "GITHUB_ANALYTICS_TOKEN_SECRET_SCOPE and "
@@ -168,6 +172,8 @@ def resolve_github_token(
             key=key,
         )
     except Exception as error:
+        # Any lookup failure is reported by scope and key only. The message must
+        # never contain the secret value itself.
         raise RuntimeError(
             f"Unable to read GitHub token secret {scope}/{key}"
         ) from error

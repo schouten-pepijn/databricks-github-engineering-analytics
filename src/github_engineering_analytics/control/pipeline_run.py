@@ -41,10 +41,14 @@ class PipelineRun:
 
     def __post_init__(self) -> None:
         """Normalize timestamps and enforce lifecycle-state invariants."""
+        # 1. The identity fields must not be blank.
         self._require_non_empty(self.run_id, "run_id")
         self._require_non_empty(self.source_name, "source_name")
         self._require_non_empty(self.entity_name, "entity_name")
 
+        # 2. Store every timestamp in UTC. The dataclass is frozen, so plain
+        #    assignment is blocked and object.__setattr__ is the way to
+        #    normalize a field during construction.
         object.__setattr__(
             self,
             "started_at",
@@ -64,6 +68,7 @@ class PipelineRun:
                 ),
             )
 
+        # 3. A candidate position can never lie behind where this run started.
         if (
             self.watermark_before is not None
             and self.candidate_watermark is not None
@@ -73,6 +78,9 @@ class PipelineRun:
                 "candidate_watermark must not be earlier than watermark_before"
             )
 
+        # 4. Each lifecycle state allows only its own fields: a running run has
+        #    no end time and no error, a succeeded run has an end time and no
+        #    error, and a failed run has both an end time and an error message.
         if self.status is PipelineRunStatus.RUNNING:
             if self.finished_at is not None:
                 raise ValueError("running pipeline runs must not have finished_at")

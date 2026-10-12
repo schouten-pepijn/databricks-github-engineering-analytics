@@ -243,6 +243,10 @@ class DeltaSilverIssueLabelWriter:
         run ID of its Issue snapshot. Otherwise an unrelated observation could
         update or delete the wrong current-state relationships.
         """
+        # A LEFT join keeps every relationship, even one whose Issue is missing
+        # from the declared scope; for such a row observed.issue_id is NULL.
+        # The two other conditions catch a relationship that carries another
+        # snapshot's timestamp or run ID.
         invalid_relationships = (
             relationships.alias("relationship")
             .join(
@@ -310,6 +314,8 @@ class DeltaSilverIssueLabelWriter:
             *self._RELATIONSHIP_KEY,
         )
 
+        # A "left_anti" join keeps only the stored rows that have NO match among
+        # the current relationships. Those are the ones that no longer exist.
         stale_relationships = scoped_target_rows.alias("target").join(
             current_relationship_keys.alias("relationship"),
             (
@@ -354,6 +360,9 @@ class DeltaSilverIssueLabelWriter:
                     "AND target.label_id = source.label_id"
                 ),
             )
+            # Every source row carries an _operation. A 'delete' row removes a
+            # stale relationship; an 'upsert' row refreshes an existing one
+            # (never with older data) or, below, inserts a new one.
             .whenMatchedDelete(
                 condition="source._operation = 'delete'",
             )

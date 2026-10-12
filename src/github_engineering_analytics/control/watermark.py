@@ -24,6 +24,8 @@ class Watermark:
         if self.overlap_seconds < 0:
             raise ValueError("overlap_seconds must not be negative")
 
+        # The dataclass is frozen, so object.__setattr__ is how a field is
+        # normalized (here to UTC) while the object is being constructed.
         object.__setattr__(self, "value", self.value.astimezone(UTC))
 
     @property

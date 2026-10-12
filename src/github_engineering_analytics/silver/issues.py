@@ -266,6 +266,8 @@ class DeltaSilverIssueWriter:
             ") USING DELTA"
         )
 
+        # CREATE TABLE IF NOT EXISTS leaves an older table exactly as it was, so
+        # a column introduced by a newer contract has to be added by hand.
         existing_columns = set(self._spark.table(self._table_name).columns)
         if "author_user_id" not in existing_columns:
             self._spark.sql(
@@ -346,6 +348,10 @@ class DeltaSilverIssueWriter:
                     "AND target.issue_id = source.issue_id"
                 ),
             )
+            # MERGE looks every source row up by its business key. A matching row
+            # is replaced only by data that is not older (">="), so replaying an
+            # old Bronze row can never overwrite a newer Issue; ">=" also makes
+            # a repeated run harmless.
             .whenMatchedUpdate(
                 condition="source.updated_at >= target.updated_at",
                 set={
@@ -360,6 +366,7 @@ class DeltaSilverIssueWriter:
                     "source_run_id": "source.source_run_id",
                 },
             )
+            # No row for this key yet: insert it.
             .whenNotMatchedInsert(
                 values={
                     "repository_owner": "source.repository_owner",

@@ -37,6 +37,8 @@ def require_unique_dataframe_keys(
     if not key_columns:
         raise ValueError("key_columns must not be empty")
 
+    # Count the rows per key and keep the keys that occur more than once. One
+    # example is enough to fail, so limit(1) avoids scanning for every duplicate.
     duplicate_keys = (
         source.groupBy(*key_columns)
         .count()

@@ -260,6 +260,8 @@ class DeltaSilverUserWriter:
                 source.alias("source"),
                 "target.user_id = source.user_id",
             )
+            # Same guard as the Issues MERGE: never replace a user with an older
+            # observation.
             .whenMatchedUpdate(
                 condition="source.observed_at >= target.observed_at",
                 set={

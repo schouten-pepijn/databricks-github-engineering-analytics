@@ -88,6 +88,8 @@ class GitHubIssueBronzeIngestion:
         if batch_size <= 0:
             raise ValueError("batch_size must be positive")
 
+        # The query starts at the watermark minus its overlap, so records updated
+        # near the previous boundary are read again. None means a full load.
         request_watermark = (
             watermark.extraction_start if watermark is not None else None
         )
@@ -103,6 +105,8 @@ class GitHubIssueBronzeIngestion:
         records_extracted = 0
         batches_written = 0
 
+        # batched() takes the lazy API iterator in fixed-size chunks. Memory stays
+        # bounded, and each chunk is appended to Bronze before the next is fetched.
         for batch_number, payload_batch in enumerate(
             batched(issues, batch_size),
             start=1,
@@ -124,6 +128,8 @@ class GitHubIssueBronzeIngestion:
             records_extracted += len(records)
             batches_written += 1
 
+            # Track the newest source timestamp seen so far; it becomes the
+            # candidate watermark once the whole job has succeeded.
             latest_in_batch = max(record.source_updated_at for record in records)
 
             if (

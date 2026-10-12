@@ -42,6 +42,7 @@ class ReplayManifest:
 
     def __post_init__(self) -> None:
         """Validate the immutable replay boundary at the domain edge."""
+        # Text fields: reject blank values, and name the offending field.
         for value, field_name in (
             (self.manifest_id, "manifest_id"),
             (self.repository_owner, "repository_owner"),
@@ -56,6 +57,8 @@ class ReplayManifest:
         if self.bronze_version < 0:
             raise ValueError("bronze_version must not be negative")
 
+        # Run IDs: a manifest needs at least one, none may be blank, and none may
+        # repeat (a repeat would count the same rows twice).
         if not self.successful_run_ids:
             raise ValueError("successful_run_ids must not be empty")
 
@@ -68,4 +71,6 @@ class ReplayManifest:
         if self.cutoff_at.tzinfo is None or self.cutoff_at.utcoffset() is None:
             raise ValueError("cutoff_at must be timezone-aware")
 
+        # Frozen dataclass: object.__setattr__ normalizes the cutoff to UTC, so
+        # two manifests for the same instant compare equal.
         object.__setattr__(self, "cutoff_at", self.cutoff_at.astimezone(UTC))

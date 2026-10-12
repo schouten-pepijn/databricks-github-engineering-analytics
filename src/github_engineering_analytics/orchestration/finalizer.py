@@ -48,10 +48,12 @@ def finalize_successful_run(
     pipeline_runs, watermarks = _create_repositories(spark=spark, catalog=catalog)
     run = pipeline_runs.get(run_id)
 
+    # A retry after a completed finalization is a no-op, not an error.
     if run.status is PipelineRunStatus.SUCCEEDED:
         logger.bind(run_id=run_id).info("Pipeline run is already finalized.")
         return run
 
+    # FAILED is a terminal state: a later success must not revive the run.
     if run.status is PipelineRunStatus.FAILED:
         raise ValueError(f"Cannot finalize failed pipeline run: run_id={run_id!r}")
 
@@ -98,10 +100,14 @@ def finalize_failed_run(
     pipeline_runs, _ = _create_repositories(spark=spark, catalog=catalog)
     run = pipeline_runs.get(run_id)
 
+    # Repeating this finalizer, or a failure already recorded by an upstream
+    # task, is a safe no-op.
     if run.status is PipelineRunStatus.FAILED:
         logger.bind(run_id=run_id).info("Pipeline run is already marked failed.")
         return run
 
+    # SUCCEEDED is a terminal state: Gold already passed and the watermark may
+    # be committed, so the run must not be flipped to failed afterwards.
     if run.status is PipelineRunStatus.SUCCEEDED:
         raise ValueError(f"Cannot fail successful pipeline run: run_id={run_id!r}")
 

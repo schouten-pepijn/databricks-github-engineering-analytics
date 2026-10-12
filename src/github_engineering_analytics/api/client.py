@@ -104,7 +104,10 @@ class GitHubClient:
         self.session = requests.Session()
         self.session.headers.update(headers)
 
+        # The retry policy answers three questions: which errors are worth
+        # retrying, how many attempts to make, and how long to wait between them.
         self.retrying = Retrying(
+            # Only transient failures. A 400, 401 or 404 would fail again.
             retry=retry_if_exception_type(
                 (
                     GitHubRetryableError,
@@ -112,7 +115,10 @@ class GitHubClient:
                     requests.ConnectionError,
                 )
             ),
+            # The total number of attempts, including the first one.
             stop=stop_after_attempt(max_attempts),
+            # Use GitHub's own delay when it gives one; otherwise back off
+            # 1s, 2s, 4s ... up to a maximum of 30s.
             wait=WaitGitHubRateLimit(
                 fallback=wait_exponential(
                     multiplier=1,
@@ -120,6 +126,8 @@ class GitHubClient:
                     max=30,
                 )
             ),
+            # After the last attempt raise the original error, not tenacity's
+            # RetryError wrapper, so callers can catch the real exception type.
             reraise=True,
         )
 
@@ -160,6 +168,9 @@ class GitHubClient:
             **kwargs,
         )
 
+        # The order of these checks matters. A rate limit can arrive as a 403 or
+        # a 429, so it is recognized first; otherwise the generic error handling
+        # below would treat it as a permanent failure.
         if self._is_rate_limited(response):
             retry_after_seconds = self._get_rate_limit_delay(response)
             message = (
@@ -177,6 +188,8 @@ class GitHubClient:
                 f"GitHub server error: {response.status_code} {response.text}"
             )
 
+        # Anything else that is not a success (400, 401, 404 ...) is a request or
+        # configuration problem. It is not retried.
         if not response.ok:
             raise GitHubApiError(
                 f"GitHub API request failed: {response.status_code} {response.text}"
@@ -213,8 +226,11 @@ class GitHubClient:
             try:
                 return max(float(retry_after), 0.0)
             except ValueError:
+                # An unreadable header is ignored; try the next source of a delay.
                 pass
 
+        # X-RateLimit-Reset is the epoch second at which the limit resets, so the
+        # delay is the time left until then (never negative).
         reset_at = response.headers.get("X-RateLimit-Reset")
 
         if reset_at is not None:
@@ -228,6 +244,7 @@ class GitHubClient:
             except ValueError:
                 pass
 
+        # No usable header: the caller falls back to exponential backoff.
         return None
 
     def iter_issues(
@@ -248,6 +265,9 @@ class GitHubClient:
 
         url = f"{self.BASE_URL}/repos/{owner}/{repository}/issues"
 
+        # Oldest-updated first. An Issue edited while we are paging then moves to
+        # the end of the list instead of shifting earlier pages, so page-number
+        # pagination does not skip records.
         params: dict[str, str | int] = {
             "state": "all",
             "sort": "updated",
@@ -263,6 +283,7 @@ class GitHubClient:
             params["since"] = since.astimezone(UTC).isoformat().replace("+00:00", "Z")
 
         while True:
+            # Send a copy: this loop changes "page" in place afterwards.
             response = self._request(
                 method="GET",
                 url=url,

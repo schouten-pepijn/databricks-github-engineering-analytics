@@ -383,6 +383,8 @@ class DeltaSilverLabelWriter:
                     "AND target.label_id = source.label_id"
                 ),
             )
+            # Same guard as the Issues MERGE: never replace a label definition
+            # with an older observation.
             .whenMatchedUpdate(
                 condition="source.observed_at >= target.observed_at",
                 set={

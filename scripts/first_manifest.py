@@ -62,6 +62,7 @@ def main(run_id: str) -> None:
     ).strip()
 
     def build() -> ReplayManifest:
+        """Build and store the manifest; the same inputs give the same ID."""
         return build_replay_manifest(
             spark=spark,
             runs=runs,
