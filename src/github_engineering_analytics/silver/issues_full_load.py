@@ -30,11 +30,17 @@ def run_bronze_to_silver(
     config = PipelineConfig(catalog=catalog)
     bronze = spark.table(config.bronze_issues_table)
 
+    # Optionally scope to one run. The tracked pipeline passes its own run ID so
+    # it only processes what it just ingested; without one, the whole
+    # append-only Bronze history is reprocessed.
     if bronze_run_id is not None:
         bronze = bronze.where(F.col("_run_id") == bronze_run_id)
 
     transformer = BronzeIssueToSilverTransformer()
     writer = DeltaSilverIssueWriter(spark=spark, config=config)
 
+    # ensure_table() creates the table on the first run and does nothing after
+    # that. The transformer keeps the newest observation per Issue, and the writer
+    # merges it in without ever replacing newer data with older data.
     writer.ensure_table()
     writer.upsert_dataframe(transformer.transform(bronze))
