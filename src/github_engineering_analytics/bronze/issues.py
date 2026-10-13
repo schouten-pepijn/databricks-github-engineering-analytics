@@ -56,6 +56,8 @@ class BronzeIssueRecord:
         cls._require_non_empty(run_id, "run_id")
         cls._require_non_empty(page_or_batch_reference, "page_or_batch_reference")
 
+        # "type(x) is not int" instead of isinstance(): bool is a subclass of int,
+        # so True would otherwise pass as ID 1.
         issue_id = payload.get("id")
         if type(issue_id) is not int or issue_id <= 0:
             raise ValueError("payload['id'] must be a positive integer")
@@ -69,6 +71,8 @@ class BronzeIssueRecord:
             repository_name=repository_name,
             issue_id=issue_id,
             source_updated_at=cls._parse_source_timestamp(updated_at),
+            # The whole payload is kept as JSON text, so no source field is lost
+            # before Silver decides what to extract.
             raw_json=cls._serialize_payload(payload),
             run_id=run_id,
             ingested_at=cls._normalize_to_utc(ingested_at, "ingested_at"),
@@ -83,6 +87,9 @@ class BronzeIssueRecord:
     @staticmethod
     def _serialize_payload(payload: dict[str, object]) -> str:
         """Return stable JSON without dropping or classifying source fields."""
+        # Sorted keys and compact separators give the same text for the same
+        # payload, so Bronze rows and any later comparison are deterministic.
+        # allow_nan=False rejects NaN and Infinity, which are not valid JSON.
         try:
             return json.dumps(
                 payload,
@@ -97,6 +104,8 @@ class BronzeIssueRecord:
     @staticmethod
     def _parse_source_timestamp(value: str) -> datetime:
         """Parse GitHub's ISO 8601 timestamp and normalize it to UTC."""
+        # GitHub writes UTC as a trailing "Z". Spelling it "+00:00" keeps the parse
+        # independent of the Python version.
         try:
             parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
         except ValueError as error:
@@ -166,6 +175,8 @@ class DeltaBronzeIssueWriter:
             operation="reading or writing Bronze issue records",
         )
 
+        # One tuple per record. The values must follow the field order of
+        # _ROW_SCHEMA, because Spark matches them by position, not by name.
         rows = [
             (
                 record.repository_owner,
@@ -186,6 +197,8 @@ class DeltaBronzeIssueWriter:
             schema=self._ROW_SCHEMA,
         )
 
+        # Append only: Bronze never updates or deletes rows. Duplicates from the
+        # overlap window are expected and are resolved later, in Silver.
         dataframe.write.format("delta").mode("append").saveAsTable(self._table_name)
 
     def ensure_table(self) -> None:
@@ -200,6 +213,9 @@ class DeltaBronzeIssueWriter:
             f"{quote_multipart_identifier(self._schema_name)}"
         )
 
+        # NOT NULL columns make Delta reject an incomplete row at write time.
+        # Only _request_watermark may be empty: a full load has no watermark.
+        # Keep this in sync with _ROW_SCHEMA above.
         self._spark.sql(
             "CREATE TABLE IF NOT EXISTS "
             f"{quote_multipart_identifier(self._table_name)} ("
