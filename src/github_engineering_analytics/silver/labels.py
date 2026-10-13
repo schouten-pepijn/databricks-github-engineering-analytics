@@ -73,6 +73,8 @@ class SilverLabel:
             if not isinstance(value, str) or not value.strip():
                 raise ValueError(f"{field_name} must be a non-empty string")
 
+        # "type(x) is not int" instead of isinstance(): bool is a subclass of int,
+        # so True would otherwise pass as ID 1.
         if type(source_issue_id) is not int or source_issue_id <= 0:
             raise ValueError("source_issue_id must be a positive integer")
 
@@ -92,6 +94,8 @@ class SilverLabel:
                 f"{source_issue_id!r} != {payload_issue_id!r}"
             )
 
+        # A missing or non-list "labels" value is invalid, but an empty list is
+        # valid and simply means "this Issue has no labels".
         label_payloads = payload.get("labels")
         if not isinstance(label_payloads, list):
             raise ValueError("payload['labels'] must be a JSON array")
@@ -113,6 +117,8 @@ class SilverLabel:
                 source_run_id=source_run_id,
             )
 
+            # A label can be attached to an Issue only once; a repeat means the
+            # payload is malformed.
             if label.label_id in label_ids:
                 raise ValueError(
                     "payload['labels'] must not contain duplicate label IDs"
