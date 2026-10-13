@@ -54,6 +54,8 @@ class SilverUser:
         source_run_id: str,
     ) -> Self:
         """Create a normalized user from one preserved Bronze issue payload."""
+        # "type(x) is not int" instead of isinstance(): bool is a subclass of int,
+        # so True would otherwise pass as ID 1.
         if type(source_issue_id) is not int or source_issue_id <= 0:
             raise ValueError("source_issue_id must be a positive integer")
 
@@ -70,6 +72,8 @@ class SilverUser:
             "payload['id']",
         )
 
+        # The Bronze column and the payload must describe the same Issue; fail on
+        # a mismatch instead of guessing which one is right.
         if source_issue_id != payload_issue_id:
             raise ValueError(
                 "Bronze source_issue_id must match payload['id']: "
@@ -97,6 +101,8 @@ class SilverUser:
                 "payload['user']['type']",
             ),
             source_issue_id=source_issue_id,
+            # The Issue's update time doubles as the time this user was observed;
+            # it decides which observation of the same user is the newest.
             observed_at=source_updated_at.astimezone(UTC),
             source_run_id=source_run_id,
         )
@@ -413,6 +419,7 @@ class BronzeIssueToSilverUserTransformer:
             | F.col("_ingested_at").isNull()
         )
 
+        # One invalid row is enough to fail, so limit(1) stops the scan early.
         if invalid_rows.limit(1).count():
             raise ValueError(
                 "Bronze source contains rows that cannot form valid Silver users"
