@@ -81,6 +81,8 @@ def reset_catalog(
     skipped_tables: list[str] = []
 
     for table_name in _known_table_names(config, include_all=include_all):
+        # Skipping an absent table keeps the reset usable on a catalog that is
+        # only partly built (for example DEV, which has no replay manifests).
         if not spark.catalog.tableExists(table_name):
             skipped_tables.append(table_name)
             logger.bind(catalog=catalog, table_name=table_name).info(
@@ -88,6 +90,8 @@ def reset_catalog(
             )
             continue
 
+        # TRUNCATE removes every row but keeps the table and its Delta history, so
+        # time travel to older versions still works until the retention window ends.
         spark.sql(f"TRUNCATE TABLE {quote_multipart_identifier(table_name)}")
         truncated_tables.append(table_name)
         logger.bind(catalog=catalog, table_name=table_name).info(
@@ -182,6 +186,8 @@ def _require_confirmed_catalog(
 
     _require_single_identifier(catalog, catalog_environment_variable)
 
+    # Two-key safety: the catalog name has to be typed twice, as the target and
+    # as the confirmation. A stale shell variable then cannot reset the wrong one.
     if confirmation != catalog:
         raise ValueError(
             f"Set {confirmation_environment_variable} exactly to "
