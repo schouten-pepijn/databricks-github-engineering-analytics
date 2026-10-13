@@ -104,6 +104,7 @@ class DeltaWatermarkRepository:
                 "watermark_value",
                 "overlap_seconds",
             )
+            # Two rows are enough to detect a broken (source, entity) key.
             .limit(2)
             .collect()
         )
