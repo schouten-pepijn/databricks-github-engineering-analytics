@@ -63,6 +63,8 @@ class SilverIssue:
         source_run_id: str,
     ) -> Self:
         """Create a Silver issue from the preserved GitHub source payload."""
+        # "type(x) is not int" instead of isinstance(): bool is a subclass of int
+        # in Python, so isinstance(True, int) is True and True would pass as ID 1.
         if type(issue_id) is not int or issue_id <= 0:
             raise ValueError("issue_id must be a positive integer")
 
@@ -77,6 +79,8 @@ class SilverIssue:
         payload = cls._parse_payload(raw_json)
         payload_issue_id = cls._require_positive_int(payload, "id")
 
+        # The Bronze column and the raw payload must describe the same Issue. A
+        # mismatch means the row was assembled wrongly, so fail instead of guessing.
         if issue_id != payload_issue_id:
             raise ValueError(
                 "Bronze issue_id must match payload['id']: "
@@ -94,6 +98,8 @@ class SilverIssue:
             issue_number=cls._require_positive_int(payload, "number"),
             title=cls._require_non_empty_string(payload, "title"),
             state=cls._require_non_empty_string(payload, "state"),
+            # GitHub's issues endpoint also returns pull requests, and only those
+            # carry a "pull_request" key, so its presence is the classification.
             is_pull_request="pull_request" in payload,
             author_user_id=cls._require_positive_int(
                 author_payload,
@@ -179,6 +185,8 @@ class SilverIssue:
     @staticmethod
     def _parse_timestamp_value(value: str, field_name: str) -> datetime:
         """Parse a timezone-aware ISO-8601 timestamp and normalize it to UTC."""
+        # GitHub writes UTC as a trailing "Z". Spelling it "+00:00" keeps the parse
+        # independent of the Python version.
         try:
             parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
         except ValueError as e:
@@ -186,6 +194,7 @@ class SilverIssue:
                 f"payload[{field_name!r}] must be an ISO-8601 timestamp"
             ) from e
 
+        # A timestamp without a zone is ambiguous: reject it instead of assuming UTC.
         if parsed.tzinfo is None or parsed.utcoffset() is None:
             raise ValueError(
                 f"payload[{field_name!r}] must include timezone information"
@@ -574,6 +583,8 @@ class BronzeIssueToSilverTransformer:
             )
         )
 
+        # One invalid row is enough to fail, so limit(1) lets Spark stop scanning
+        # as soon as it finds one instead of checking the whole table.
         if invalid_rows.limit(1).count():
             raise ValueError(
                 "Bronze source contains rows that cannot form valid Silver issues"
