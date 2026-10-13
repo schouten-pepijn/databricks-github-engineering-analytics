@@ -38,8 +38,8 @@ def first_line(error: BaseException) -> str:
     return str(error.__cause__ or error).splitlines()[0]
 
 
-def main(run_id: str) -> None:
-    """Create and verify one manifest for a successful TEST pipeline run."""
+def main(run_ids: list[str]) -> None:
+    """Create and verify one manifest for successful TEST pipeline runs."""
     spark: SparkSession = (
         DatabricksSession.builder.profile("databricks-dev").serverless().getOrCreate()
     )
@@ -51,10 +51,15 @@ def main(run_id: str) -> None:
     manifests.ensure_table()
     watermarks = DeltaWatermarkRepository(spark, config)
 
-    run = runs.get(run_id)
-    if run.finished_at is None:
-        raise SystemExit(f"CHECK FAILED: run {run_id} has no finish time")
-    cutoff_at = run.finished_at
+    loaded_runs = [runs.get(run_id) for run_id in run_ids]
+    finish_times = [
+        run.finished_at for run in loaded_runs if run.finished_at is not None
+    ]
+    if len(finish_times) != len(loaded_runs):
+        raise SystemExit("CHECK FAILED: every selected run needs a finish time")
+    # The cutoff is the moment the last selected run finished, so the Bronze
+    # commits of every selected run lie at or before the version that is pinned.
+    cutoff_at = max(finish_times)
     watermark_before = watermarks.get("github", "issues")
     manifest_count_before = spark.table(config.replay_manifest_table).count()
     code_commit = subprocess.check_output(
@@ -70,7 +75,7 @@ def main(run_id: str) -> None:
             repository_owner="psf",
             repository_name="requests",
             bronze_table=config.bronze_issues_table,
-            successful_run_ids=[run_id],
+            successful_run_ids=run_ids,
             cutoff_at=cutoff_at,
             code_commit=code_commit,
             transformation_version="v1",
@@ -87,7 +92,7 @@ def main(run_id: str) -> None:
         "manifest create must insert at most one row",
     )
 
-    # Same run finish time and inputs produce the same manifest ID on retry.
+    # The same runs, cutoff and inputs produce the same manifest ID on retry.
     build()
     check(
         spark.table(config.replay_manifest_table).count() == count_after_first_build,
@@ -99,8 +104,8 @@ def main(run_id: str) -> None:
     missing = replace(manifest, bronze_version=manifest.bronze_version + 1_000_000)
     try:
         read_manifest_input(spark, missing).count()
-    except ManifestInputUnavailableError as error:
-        print("expected failure (missing version):", first_line(error))
+    except ManifestInputUnavailableError as e:
+        print("expected failure (missing version):", first_line(e))
     else:
         raise SystemExit("CHECK FAILED: missing version must not be readable")
 
@@ -109,8 +114,8 @@ def main(run_id: str) -> None:
     expired = replace(manifest, bronze_version=1)
     try:
         read_manifest_input(spark, expired).count()
-    except ManifestInputUnavailableError as error:
-        print("expected failure (expired version):", first_line(error))
+    except ManifestInputUnavailableError as e:
+        print("expected failure (expired version):", first_line(e))
     else:
         raise SystemExit("CHECK FAILED: expired version must not be readable")
 
@@ -130,7 +135,7 @@ def main(run_id: str) -> None:
     print(
         {
             "manifest_id": manifest.manifest_id,
-            "run_id": run_id,
+            "run_ids": sorted(run_ids),
             "bronze_version": manifest.bronze_version,
             "frozen_rows": frozen_rows,
             "watermark_unchanged": True,
@@ -141,5 +146,11 @@ def main(run_id: str) -> None:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--run-id", required=True)
-    main(parser.parse_args().run_id)
+    parser.add_argument(
+        "--run-id",
+        required=True,
+        action="append",
+        dest="run_ids",
+        help="a succeeded run to include; repeat the option for every run",
+    )
+    main(parser.parse_args().run_ids)
