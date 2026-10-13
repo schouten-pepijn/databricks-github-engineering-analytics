@@ -272,6 +272,8 @@ class DeltaPipelineRunRepository:
                     for column in self._TIMESTAMP_COLUMNS
                 ),
             )
+            # Two rows are enough to notice a broken unique key. Never collect
+            # more than that from a table that can grow.
             .limit(2)
             .collect()
         )
@@ -291,6 +293,8 @@ class DeltaPipelineRunRepository:
         watermark_before = run.watermark_before
         candidate_watermark = run.candidate_watermark
 
+        # A positional tuple in the field order of _ROW_SCHEMA. The explicit schema
+        # matters because Spark cannot infer a type from a column that is None.
         return self._spark.createDataFrame(
             [
                 (
@@ -325,6 +329,9 @@ class DeltaPipelineRunRepository:
     @staticmethod
     def _deserialize_run(row: dict[str, object]) -> PipelineRun:
         """Rebuild one validated domain run from its Delta control row."""
+        # An unknown stored status means the table holds data this code cannot
+        # interpret. That is a RuntimeError (broken data), not a ValueError
+        # (a mistake by the caller).
         try:
             status = PipelineRunStatus(str(row["status"]))
         except (KeyError, ValueError) as error:
@@ -381,6 +388,9 @@ class DeltaPipelineRunRepository:
         value = row.get(f"{value_key}_micros")
         overlap = row.get(overlap_key)
 
+        # A watermark is a pair: a position plus an overlap. Both missing simply
+        # means "no watermark" (for example on the first run); only one of the
+        # two present is a corrupt row.
         if value is None and overlap is None:
             return None
 
