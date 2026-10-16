@@ -33,10 +33,12 @@ resources:
           python_wheel_task:
             package_name: github_engineering_analytics
             entry_point: github-engineering-analytics-replay-silver
+            # Only the catalog is a named parameter. manifest_id and execution_id
+            # are job parameters, and Databricks already hands those to a wheel
+            # task as --manifest_id and --execution_id. Repeating them here would
+            # pass every value twice under two different spellings.
             named_parameters:
               catalog: ${var.catalog}
-              manifest-id: "{{job.parameters.manifest_id}}"
-              execution-id: "{{job.parameters.execution_id}}"
 
       environments:
         - environment_key: python

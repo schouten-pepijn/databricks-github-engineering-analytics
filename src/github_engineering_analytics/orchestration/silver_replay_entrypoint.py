@@ -42,10 +42,15 @@ def replay_silver_main(
 @app.callback(invoke_without_command=True)
 def _run_cli(
     catalog: Annotated[str, typer.Option()],
-    manifest_id: Annotated[str, typer.Option("--manifest-id")],
-    execution_id: Annotated[str, typer.Option("--execution-id")],
+    manifest_id: Annotated[str, typer.Option("--manifest_id")],
+    execution_id: Annotated[str, typer.Option("--execution_id")],
 ) -> None:
-    """Map the wheel parameters onto the replay call."""
+    """Map the wheel parameters onto the replay call.
+
+    The two replay values are job parameters. Databricks passes job parameters
+    to a wheel task under their own names (--manifest_id, with an underscore),
+    unlike named_parameters such as --catalog, so the options must match that.
+    """
     replay_silver_main(
         catalog=catalog,
         manifest_id=manifest_id,

@@ -17,8 +17,8 @@ def test_cli_passes_the_wheel_parameters_to_the_replay(mocker) -> None:
         app,
         [
             "--catalog=demo_test",
-            "--manifest-id=manifest-001",
-            "--execution-id=run_1",
+            "--manifest_id=manifest-001",
+            "--execution_id=run_1",
         ],
     )
 
