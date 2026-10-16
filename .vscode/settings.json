@@ -43,5 +43,6 @@
     "~/.copilot/skills": true,
     "~/.claude/skills": true,
     "~/.vscode/extensions/synapsevscode.synapse-1.26.0/copilot/skills": true
-  }
+  },
+  "python.terminal.useEnvFile": true
 }
