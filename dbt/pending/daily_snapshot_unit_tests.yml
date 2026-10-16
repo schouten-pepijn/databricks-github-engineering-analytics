@@ -1,0 +1,75 @@
+version: 2
+
+# Fixture for the Sprint 3 daily snapshot models.
+#
+# NOT ACTIVE YET. This file sits outside model-paths on purpose: a unit test
+# for a model that does not exist makes `dbt parse` fail for the whole project,
+# and the Gold job parses the project on every run. Move it to
+# models/daily_snapshot/ in the same change that adds the three models.
+#
+# Scenario: one Issue (psf/requests #1, created 2026-10-09).
+#   run_a finishes on 2026-10-10: the Issue is open and has the label "bug".
+#   No run finishes on 2026-10-11: that day is a gap, not an empty backlog.
+#   run_b finishes on 2026-10-12: the Issue is closed and the label is gone.
+#
+# Input contracts the staging models must provide:
+#   stg_manifest_runs                    one row per successful manifest run
+#   stg_bronze_issue_observations        one row per Bronze observation of an Issue
+#   stg_bronze_issue_label_observations  one row per label of an observation
+#
+# Only the listed columns are compared; the models may add more (for example
+# issue_key). A day counts as observed when a run finished on that day; the
+# state on that day is the newest observation ingested up to the end of it.
+
+unit_tests:
+  - name: day_coverage_shows_a_gap_between_two_runs
+    model: snapshot_day_coverage
+    overrides:
+      vars:
+        snapshot_start_date: "2026-10-10"
+        snapshot_end_date: "2026-10-12"
+    given:
+      - input: ref('stg_manifest_runs')
+        rows:
+          - {manifest_id: manifest_test, run_id: run_a, finished_at: "2026-10-10 18:00:00"}
+          - {manifest_id: manifest_test, run_id: run_b, finished_at: "2026-10-12 18:00:00"}
+    expect:
+      rows:
+        - {snapshot_date: "2026-10-10", coverage: observed}
+        - {snapshot_date: "2026-10-11", coverage: missing}
+        - {snapshot_date: "2026-10-12", coverage: observed}
+
+  - name: issue_snapshot_follows_the_status_change_and_skips_the_gap
+    model: fact_issue_daily_snapshot
+    # The coverage input deliberately contains the missing day: the model must
+    # not produce Issue rows for it.
+    given:
+      - input: ref('snapshot_day_coverage')
+        rows:
+          - {snapshot_date: "2026-10-10", coverage: observed}
+          - {snapshot_date: "2026-10-11", coverage: missing}
+          - {snapshot_date: "2026-10-12", coverage: observed}
+      - input: ref('stg_bronze_issue_observations')
+        rows:
+          - {manifest_id: manifest_test, repository_owner: psf, repository_name: requests, issue_id: 1, run_id: run_a, ingested_at: "2026-10-10 17:50:00", source_updated_at: "2026-10-09 08:00:00", state: open, created_at: "2026-10-09 08:00:00", closed_at: null}
+          - {manifest_id: manifest_test, repository_owner: psf, repository_name: requests, issue_id: 1, run_id: run_b, ingested_at: "2026-10-12 17:50:00", source_updated_at: "2026-10-12 09:00:00", state: closed, created_at: "2026-10-09 08:00:00", closed_at: "2026-10-12 09:00:00"}
+    expect:
+      rows:
+        - {snapshot_date: "2026-10-10", repository_owner: psf, repository_name: requests, issue_id: 1, state: open, is_open_on_date: true, age_days: 1, observation_run_id: run_a, manifest_id: manifest_test}
+        - {snapshot_date: "2026-10-12", repository_owner: psf, repository_name: requests, issue_id: 1, state: closed, is_open_on_date: false, age_days: 3, observation_run_id: run_b, manifest_id: manifest_test}
+
+  - name: removed_label_stays_on_the_old_date_only
+    model: bridge_issue_label_daily_snapshot
+    # The relation is taken from the observation that the Issue snapshot picked
+    # for each date. run_b has no label rows, so 2026-10-12 must have no relation.
+    given:
+      - input: ref('fact_issue_daily_snapshot')
+        rows:
+          - {snapshot_date: "2026-10-10", repository_owner: psf, repository_name: requests, issue_id: 1, observation_run_id: run_a, manifest_id: manifest_test}
+          - {snapshot_date: "2026-10-12", repository_owner: psf, repository_name: requests, issue_id: 1, observation_run_id: run_b, manifest_id: manifest_test}
+      - input: ref('stg_bronze_issue_label_observations')
+        rows:
+          - {repository_owner: psf, repository_name: requests, issue_id: 1, run_id: run_a, label_id: 100, label_name: bug}
+    expect:
+      rows:
+        - {snapshot_date: "2026-10-10", repository_owner: psf, repository_name: requests, issue_id: 1, label_id: 100, observation_run_id: run_a, manifest_id: manifest_test}
