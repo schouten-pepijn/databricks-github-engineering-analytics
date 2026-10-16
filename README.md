@@ -86,6 +86,31 @@ with this project. It's also possible to interact with it directly using the CLI
    ```
 
 
+## Replaying Silver from a stored manifest (TEST only)
+
+A replay rebuilds the four Silver entities from Bronze exactly as a stored
+manifest pinned them, without calling GitHub. It writes only to isolated
+candidate tables in `github_analytics_v2min`. It never touches live Silver, the
+control tables or the extraction watermark, and it refuses any catalog that does
+not end in `_test`.
+
+```
+task bundle:deploy:test
+task replay:silver:test -- manifest_id=<manifest id>,execution_id=<new id>
+```
+
+- `execution_id` is 1-40 characters of `[a-z0-9_]` and names the output tables
+  (`s2_replay_<entity>_<execution_id>`). Every replay needs a new one: an
+  existing target stops the job before anything is written.
+- The Bronze version the manifest pinned must still be inside the table's
+  retention window (30 days in TEST); otherwise the job fails before writing.
+- A failed halfway write lists the tables to remove. Drop them by exact name.
+- Compare two executions, and each with live Silver, using
+  `uv run python scripts/compare_silver_replays.py --first <id> --second <id>`.
+  Live Silver must not have changed since the manifest was built.
+- Job parameters reach the wheel as `--manifest_id` and `--execution_id`
+  (underscores), so the entrypoint options use that spelling.
+
 ## Recovering failed pipeline runs
 
 The pipeline has two recovery modes. Choose the mode from the persisted
