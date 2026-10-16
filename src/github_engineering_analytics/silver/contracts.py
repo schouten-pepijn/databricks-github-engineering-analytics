@@ -19,6 +19,7 @@ def require_required_columns(
     The iterable is consumed once, allowing callers to derive required columns
     directly from a Spark schema without materializing an intermediate tuple.
     """
+    # Set difference: the required names that the DataFrame does not have.
     missing_columns = set(required_columns) - set(source.columns)
 
     if missing_columns:

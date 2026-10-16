@@ -14,6 +14,10 @@ class Watermark:
     """
 
     value: datetime
+    # GitHub can change an Issue shortly after an earlier run recorded its
+    # position. Starting five minutes earlier re-reads those late changes. Bronze
+    # keeps the duplicate rows (it is append-only); Silver keeps only the newest
+    # version of each Issue, so the duplicates do not reach the analytics.
     overlap_seconds: int = 300
 
     def __post_init__(self) -> None:

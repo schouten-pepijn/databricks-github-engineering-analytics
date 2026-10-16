@@ -12,6 +12,8 @@ from github_engineering_analytics.orchestration.finalizer import (
     finalize_successful_run,
 )
 
+# Each Databricks wheel task starts exactly one entry point, so the success and
+# failure finalizers each get their own small Typer app.
 success_app = typer.Typer(
     add_completion=False,
     help="Finalize a successful GitHub Analytics pipeline run.",
@@ -24,6 +26,8 @@ failure_app = typer.Typer(
 
 def _get_or_create_spark() -> SparkSession:
     """Return the active Databricks Spark session for a wheel task."""
+    # On Databricks this reuses the session the task already has. The builder
+    # call is only there so the same code also works outside a job.
     return SparkSession.builder.getOrCreate()
 
 

@@ -23,6 +23,8 @@ def _create_bronze_ingestion(
     github_token: str | None,
 ) -> GitHubIssueBronzeIngestion:
     """Create the GitHub and Delta adapters shared by Bronze load modes."""
+    # Both load modes build the same adapters here, so they cannot drift apart
+    # in how they talk to GitHub or where they write.
     config = PipelineConfig(catalog=catalog)
     client = GitHubClient(token=github_token)
     writer = DeltaBronzeIssueWriter(spark=spark, config=config)

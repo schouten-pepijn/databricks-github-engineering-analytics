@@ -17,6 +17,8 @@ from dataclasses import dataclass
 class PipelineConfig:
     """Build fully qualified names while keeping layer responsibilities explicit."""
 
+    # frozen=True: once created, the catalog cannot change. A job therefore
+    # cannot quietly point half of its work at another environment.
     catalog: str
     bronze_schema: str = "github_analytics_bronze"
     silver_schema: str = "github_analytics_silver"
