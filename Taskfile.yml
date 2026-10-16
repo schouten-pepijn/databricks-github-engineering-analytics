@@ -112,6 +112,21 @@ tasks:
     cmds:
       - databricks bundle deploy --target dev
 
+  bundle:validate:test:
+    desc: Validate the TEST Databricks bundle
+    cmds:
+      - databricks bundle validate --target test
+
+  bundle:deploy:test:
+    desc: Deploy the TEST Databricks bundle (never implicit, run it on purpose)
+    cmds:
+      - databricks bundle deploy --target test
+
+  replay:silver:test:
+    desc: "Start a TEST Silver replay: task replay:silver:test -- manifest_id=<id>,execution_id=<new id>"
+    cmds:
+      - databricks bundle run --target test github_silver_replay --params {{.CLI_ARGS}}
+
   version:patch:
     desc: Create a local patch release commit and annotated tag
     env:
