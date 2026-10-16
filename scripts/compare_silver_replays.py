@@ -13,7 +13,6 @@ only when the live run is a failed run.
 """
 
 import argparse
-import re
 
 import pyspark.sql.functions as F
 from databricks.connect import DatabricksSession
@@ -22,10 +21,12 @@ from pyspark.sql import DataFrame, SparkSession
 
 from github_engineering_analytics.common.config import PipelineConfig
 from github_engineering_analytics.control.pipeline_run import PipelineRunStatus
+from github_engineering_analytics.orchestration.silver_replay import (
+    ENTITIES,
+    candidate_tables,
+)
 
 TEST_CATALOG = "github_engineering_analytics_test"
-TARGET_SCHEMA = "github_analytics_v2min"
-ENTITIES = ("issues", "users", "labels", "issue_labels")
 LINEAGE_COLUMN = "source_run_id"
 
 # The business key of each entity: the columns that identify one row.
@@ -44,12 +45,13 @@ def check(condition: bool, message: str) -> None:
 
 
 def candidate_table(entity: str, execution_id: str) -> str:
-    """Return the table name first_silver_replay wrote for one entity."""
-    if not re.fullmatch(r"[a-z0-9_]{1,40}", execution_id):
-        raise SystemExit(
-            "execution_id must contain 1-40 lowercase letters, digits or _"
-        )
-    return f"{TEST_CATALOG}.{TARGET_SCHEMA}.s2_replay_{entity}_{execution_id}"
+    """Return the table name the replay wrote for one entity."""
+    # The naming convention lives in one place, the replay module, so the
+    # writer and this reader can never disagree about a table name.
+    try:
+        return candidate_tables(TEST_CATALOG, execution_id)[entity]
+    except ValueError as e:
+        raise SystemExit(str(e)) from e
 
 
 def live_tables(config: PipelineConfig) -> dict[str, str]:

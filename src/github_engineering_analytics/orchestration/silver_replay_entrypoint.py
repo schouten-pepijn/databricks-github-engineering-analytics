@@ -42,8 +42,8 @@ def replay_silver_main(
 @app.callback(invoke_without_command=True)
 def _run_cli(
     catalog: Annotated[str, typer.Option()],
-    manifest_id: Annotated[str, typer.Option("--manifest_id")],
-    execution_id: Annotated[str, typer.Option("--execution_id")],
+    manifest_id: Annotated[str, typer.Option("--manifest-id")],
+    execution_id: Annotated[str, typer.Option("--execution-id")],
 ) -> None:
     """Map the wheel parameters onto the replay call."""
     replay_silver_main(
