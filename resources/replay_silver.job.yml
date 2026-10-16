@@ -1,0 +1,46 @@
+resources:
+  jobs:
+    github_silver_replay:
+      name: "[TEST] GitHub Silver replay"
+      description: >-
+        TEST ONLY, started by hand. Replays one stored manifest into isolated
+        Silver candidate tables in github_analytics_v2min. It reads Bronze at the
+        version the manifest pinned. It never calls GitHub and never writes live
+        Silver, the control tables or the extraction watermark.
+
+      # One replay at a time keeps the TEST compute and the output tables easy to
+      # reason about.
+      max_concurrent_runs: 1
+
+      # Supplied when the job is started:
+      #   databricks bundle run -t test github_silver_replay \
+      #     --params manifest_id=<manifest id>,execution_id=<new id>
+      # An empty default makes a forgotten value fail loudly, not silently.
+      parameters:
+        - name: manifest_id
+          default: ""
+        - name: execution_id
+          default: ""
+
+      tasks:
+        - task_key: replay_silver
+          environment_key: python
+
+          # A retry after a partial write would meet its own half-written tables
+          # and stop at the pre-flight check, so do not retry automatically.
+          max_retries: 0
+
+          python_wheel_task:
+            package_name: github_engineering_analytics
+            entry_point: github-engineering-analytics-replay-silver
+            named_parameters:
+              catalog: ${var.catalog}
+              manifest-id: "{{job.parameters.manifest_id}}"
+              execution-id: "{{job.parameters.execution_id}}"
+
+      environments:
+        - environment_key: python
+          spec:
+            environment_version: "3"
+            dependencies:
+              - ../dist/*.whl
