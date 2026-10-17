@@ -105,3 +105,34 @@ sources:
             description: GitHub label identifier in the relationship business key.
             data_tests:
               - not_null
+  # Python also owns the control tables. The snapshot model read them to learn
+  # which runs a manifest locked and when those runs finished. dbt never writes
+  # to them.
+  - name: control
+    description: >
+      Pipeline state written by the Python pipeline. Used only to read replay
+      manifests and run timestamps for the daily snapshot models.
+    schema: github_analytics_control
+
+    tables:
+      - name: replay_manifests
+        description: >
+          description: >
+          One immutable row per replay manifest. successful_run_ids lists the
+          runs whose Bronze rows the manifest locked.
+        columns:
+          - name: manifest_id
+            description: Content-hash identifier of the manifest.
+            data_tests:
+              - not_null
+              - unique
+
+      - name: pipeline_runs
+        description: >
+          One row per pipeline attempt, with its status and start and end times.
+        columns:
+          - name: run_id
+            description: Databricks job run ID of the attempt.
+            data_tests:
+              - not_null
+              - unique
