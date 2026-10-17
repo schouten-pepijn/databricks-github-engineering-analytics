@@ -10,7 +10,7 @@
 with manifest as (
     select
         manifest_id,
-        -- one row per run ID. explode() turns the array into rows.
+        -- One row per run ID. explode() turns the array into rows.
         explode(successful_run_ids) as run_id
     from {{ source("control", "replay_manifests") }}
     where manifest_id = '{{ var("snapshot_manifest_id") }}'
@@ -23,5 +23,5 @@ select
 from manifest
 join {{ source("control", "pipeline_runs") }} as runs
     on runs.run_id = manifest.run_id
--- Only runs that ended sucessfully count as an observation.
+-- Only runs that ended successfully count as an observation.
 where runs.status = 'succeeded'
