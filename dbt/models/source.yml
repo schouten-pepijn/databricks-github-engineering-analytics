@@ -136,3 +136,17 @@ sources:
             data_tests:
               - not_null
               - unique
+
+  # Append-only raw GitHub evidence. The snapshot models read it at the Delta
+  # version a manifest locked, so a later append cannot change a snapshot.
+  - name: bronze
+    description: >
+      Raw GitHub Issue observations written by the Python pipeline. dbt reads
+      them with Delta time travel and never writes to them.
+    schema: github_analytics_bronze
+
+    tables:
+      - name: github_issues_raw
+        description: >
+          One row per observation of an Issue, with the raw GitHub JSON payload.
+          An Issue can appear in many rows, one per run that read identifier.
