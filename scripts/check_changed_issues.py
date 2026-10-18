@@ -50,6 +50,8 @@ def prove_the_workset(spark: SparkSession) -> None:
 
 def prove_the_failure(spark: SparkSession) -> None:
     """A range that predates the moment CDF was switched on must fail clearly."""
+    # Drop any leftover from an earlier run that crashed before its cleanup, so
+    # this proof always starts from a fresh table.
     _ = spark.sql(f"DROP TABLE IF EXISTS {LATE_CDF}")
     try:
         _ = spark.sql(
