@@ -9,6 +9,18 @@ from github_engineering_analytics.silver.issues import (
     SilverIssue,
 )
 
+MODULE = "github_engineering_analytics.silver.issues"
+
+
+@pytest.fixture(autouse=True)
+def silent_change_feed(mocker) -> Mock:
+    """Keep the change-feed check out of the older ensure_table tests.
+
+    The check reads a table property through spark.sql, which a bare Mock cannot
+    answer. The check itself is tested on its own in test_delta_contracts.py.
+    """
+    return mocker.patch(f"{MODULE}.ensure_change_data_feed")
+
 
 def make_writer(
     session_timezone: str = "UTC",
@@ -308,3 +320,20 @@ def test_upsert_dataframe_merges_a_validated_source(
         "source.updated_at >= target.updated_at"
     )
     insert_builder.execute.assert_called_once()
+
+
+@patch(f"{MODULE}.ensure_change_data_feed")
+def test_ensure_table_switches_the_change_feed_on(feed: Mock) -> None:
+    spark, writer = make_writer()
+    spark.table.return_value.columns = [
+        field.name for field in DeltaSilverIssueWriter._ROW_SCHEMA
+    ]
+
+    writer.ensure_table()
+
+    # The change feed is not retroactive, so it is switched on every time the
+    # table is ensured: new tables get it before the first write, and older
+    # tables get it on their next run.
+    feed.assert_called_once_with(
+        spark, "test_catalog.github_analytics_silver.github_issues"
+    )

@@ -9,6 +9,8 @@ from github_engineering_analytics.silver.issue_labels import (
     DeltaSilverIssueLabelWriter,
 )
 
+MODULE = "github_engineering_analytics.silver.issue_labels"
+
 
 def make_writer(
     session_timezone: str = "UTC",
@@ -217,3 +219,21 @@ def test_merge_reconciliation_source_uses_the_relationship_business_key(mocker) 
         "source._operation = 'upsert'"
     )
     insert_builder.execute.assert_called_once()
+
+
+@pytest.fixture(autouse=True)
+def silent_change_feed(mocker) -> Mock:
+    """Keep the change-feed check out of the older ensure_table tests."""
+    return mocker.patch(f"{MODULE}.ensure_change_data_feed")
+
+
+def test_ensure_table_switches_the_change_feed_on(
+    silent_change_feed: Mock,
+) -> None:
+    spark, writer = make_writer()
+
+    writer.ensure_table()
+
+    silent_change_feed.assert_called_once_with(
+        spark, "test_catalog.github_analytics_silver.github_issue_labels"
+    )
