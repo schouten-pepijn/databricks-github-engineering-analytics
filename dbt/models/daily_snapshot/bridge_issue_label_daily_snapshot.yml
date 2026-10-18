@@ -1,0 +1,41 @@
+version: 2
+
+unit_tests:
+  - name: removed_label_stays_on_the_old_date_only
+    model: bridge_issue_label_daily_snapshot
+    # The relation comes from the observation the Issue snapshot picked for
+    # each date. run_b has no label rows, so 2026-10-12 must have no relation.
+    given:
+      - input: ref('fact_issue_daily_snapshot')
+        format: sql
+        rows: |
+          select
+              date'2026-10-10' as snapshot_date,
+              'psf' as repository_owner,
+              'requests' as repository_name,
+              cast(1 as bigint) as issue_id,
+              'run_a' as observation_run_id,
+              'manifest_test' as manifest_id
+          union all
+          select date'2026-10-12', 'psf', 'requests', cast(1 as bigint), 'run_b', 'manifest_test'
+      - input: ref('stg_bronze_issue_label_observations')
+        format: sql
+        rows: |
+          select
+              'psf' as repository_owner,
+              'requests' as repository_name,
+              cast(1 as bigint) as issue_id,
+              'run_a' as run_id,
+              cast(100 as bigint) as label_id,
+              'bug' as label_name
+    expect:
+      rows:
+        - {
+            snapshot_date: "2026-10-10",
+            repository_owner: psf,
+            repository_name: requests,
+            issue_id: 1,
+            label_id: 100,
+            observation_run_id: run_a,
+            manifest_id: manifest_test,
+          }
