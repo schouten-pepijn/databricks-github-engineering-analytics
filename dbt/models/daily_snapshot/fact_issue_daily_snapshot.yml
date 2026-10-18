@@ -1,0 +1,64 @@
+version: 2
+
+unit_tests:
+  - name: issue_snapshot_follows_the_status_change_and_skips_the_gap
+    model: fact_issue_daily_snapshot
+    # Both inputs are SQL: the coverage model is not built yet and the
+    # observations model is ephemeral, so dbt cannot read their column types.
+    given:
+      # The missing day is deliberately in the input: the model must not
+      # produce Issue rows for it.
+      - input: ref('snapshot_day_coverage')
+        format: sql
+        rows: |
+          select date'2026-10-10' as snapshot_date, 'observed' as coverage
+          union all
+          select date'2026-10-11', 'missing'
+          union all
+          select date'2026-10-12', 'observed'
+      - input: ref('stg_bronze_issue_observations')
+        format: sql
+        rows: |
+          select
+              'manifest_test' as manifest_id,
+              'psf' as repository_owner,
+              'requests' as repository_name,
+              cast(1 as bigint) as issue_id,
+              'run_a' as run_id,
+              timestamp'2026-10-10 17:50:00' as ingested_at,
+              timestamp'2026-10-09 08:00:00' as source_updated_at,
+              'open' as state,
+              timestamp'2026-10-09 08:00:00' as created_at,
+              cast(null as timestamp) as closed_at
+          union all
+          select
+              'manifest_test', 'psf', 'requests', cast(1 as bigint), 'run_b',
+              timestamp'2026-10-12 17:50:00',
+              timestamp'2026-10-12 09:00:00',
+              'closed',
+              timestamp'2026-10-09 08:00:00',
+              timestamp'2026-10-12 09:00:00'
+    expect:
+      rows:
+        - {
+            snapshot_date: "2026-10-10",
+            repository_owner: psf,
+            repository_name: requests,
+            issue_id: 1,
+            state: open,
+            is_open_on_date: true,
+            age_days: 1,
+            observation_run_id: run_a,
+            manifest_id: manifest_test,
+          }
+        - {
+            snapshot_date: "2026-10-12",
+            repository_owner: psf,
+            repository_name: requests,
+            issue_id: 1,
+            state: closed,
+            is_open_on_date: false,
+            age_days: 3,
+            observation_run_id: run_b,
+            manifest_id: manifest_test,
+          }
