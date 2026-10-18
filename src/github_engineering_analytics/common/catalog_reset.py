@@ -47,6 +47,16 @@ _GOLD_RELATIONS = (
     "smoke_connection",
 )
 
+# The daily snapshot models are dbt-owned too, but they live in their own schema
+# (see dbt_project.yml: +schema: github_analytics_snapshot). They are reset with
+# the Gold relations under --include-all, and never by the default reset.
+_SNAPSHOT_SCHEMA = "github_analytics_snapshot"
+_SNAPSHOT_RELATIONS = (
+    "snapshot_day_coverage",
+    "fact_issue_daily_snapshot",
+    "bridge_issue_label_daily_snapshot",
+)
+
 # These options select an approved variable pair only. ``main`` still verifies
 # the matching confirmation value before opening a Spark session or truncating.
 app = typer.Typer(
@@ -220,8 +230,9 @@ def _known_table_names(
 
     Entities still under construction are added only after their persistence
     and test-cleanup semantics are complete. ``include_all`` adds the dbt-owned
-    Gold relations and the replay manifests, which the default reset leaves alone.
-    V2-min replay tables are never listed here: remove them by exact name.
+    Gold relations, the daily snapshot relations and the replay manifests, which
+    the default reset leaves alone. V2-min replay tables are never listed here:
+    remove them by exact name.
     """
     python_owned_tables = (
         config.bronze_issues_table,
@@ -239,7 +250,16 @@ def _known_table_names(
         f"{config.catalog}.{config.gold_schema}.{relation}"
         for relation in _GOLD_RELATIONS
     )
-    return (*python_owned_tables, *gold_tables, config.replay_manifest_table)
+    snapshot_tables = tuple(
+        f"{config.catalog}.{_SNAPSHOT_SCHEMA}.{relation}"
+        for relation in _SNAPSHOT_RELATIONS
+    )
+    return (
+        *python_owned_tables,
+        *gold_tables,
+        *snapshot_tables,
+        config.replay_manifest_table,
+    )
 
 
 def _require_single_identifier(identifier: str, environment_variable: str) -> str:
