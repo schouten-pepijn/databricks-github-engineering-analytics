@@ -69,7 +69,8 @@ tasks:
   test:reset-all:
     desc: >-
       DESTRUCTIVE: like test:reset-data, and also truncate the dbt-owned Gold
-      relations and the replay manifests in the confirmed test catalog
+      relations, the daily snapshot tables and the replay manifests in the
+      confirmed test catalog
     requires:
       vars:
         - DATABRICKS_TEST_CATALOG
@@ -80,7 +81,8 @@ tasks:
   dev:reset-all:
     desc: >-
       DESTRUCTIVE: like dev:reset-data, and also truncate the dbt-owned Gold
-      relations and the replay manifests in the confirmed DEV catalog
+      relations, the daily snapshot tables and the replay manifests in the
+      confirmed DEV catalog
     requires:
       vars:
         - DATABRICKS_DEV_CATALOG
