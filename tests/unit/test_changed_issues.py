@@ -9,8 +9,11 @@ from github_engineering_analytics.silver.changed_issues import (
     KEY_COLUMNS,
     ChangeRange,
     ChangeRangeUnavailableError,
+    business_columns,
     changed_issue_keys,
 )
+
+MODULE = "github_engineering_analytics.silver.changed_issues"
 
 ISSUES = "test_catalog.silver.github_issues"
 LABELS = "test_catalog.silver.github_issue_labels"
@@ -149,3 +152,75 @@ def test_a_failing_range_stops_the_union_from_being_built() -> None:
         )
 
     feeds[ISSUES].select.return_value.distinct.return_value.union.assert_not_called()
+
+
+FEED_COLUMNS = [
+    "repository_owner",
+    "repository_name",
+    "issue_id",
+    "state",
+    "source_run_id",
+    "_change_type",
+    "_commit_version",
+    "_commit_timestamp",
+]
+
+
+def test_business_columns_exclude_cdf_metadata_and_lineage() -> None:
+    result = business_columns(FEED_COLUMNS, lineage_columns=("source_run_id",))
+
+    # The three CDF bookkeeping columns and the lineage column are not business
+    # values, so a change in them alone is not a real change.
+    assert result == ("repository_owner", "repository_name", "issue_id", "state")
+
+
+def test_without_lineage_columns_every_value_column_counts() -> None:
+    result = business_columns(FEED_COLUMNS, lineage_columns=())
+
+    assert "source_run_id" in result
+    assert "_change_type" not in result
+
+
+def test_an_unknown_lineage_column_is_rejected_by_name() -> None:
+    with pytest.raises(ValueError, match="no_such_column"):
+        _ = business_columns(FEED_COLUMNS, lineage_columns=("no_such_column",))
+
+
+def test_each_table_is_filtered_with_its_own_row_key_and_lineage(
+    passthrough_filter: Mock,
+) -> None:
+    feeds = {ISSUES: make_feed(), LABELS: make_feed()}
+    spark = make_spark(feeds)
+
+    _ = changed_issue_keys(
+        spark,
+        issues_table=ISSUES,
+        issues_range=ChangeRange(2, 3),
+        issue_labels_table=LABELS,
+        issue_labels_range=ChangeRange(2, 3),
+        issues_lineage_columns=("source_run_id",),
+        issue_labels_lineage_columns=("source_run_id", "observed_at"),
+    )
+
+    calls = {c.args[0]: c.args[1:] for c in passthrough_filter.call_args_list}
+    # A label is identified by the Issue key plus its label id; an Issue by the key.
+    assert calls[feeds[ISSUES]] == (KEY_COLUMNS, ("source_run_id",))
+    assert calls[feeds[LABELS]] == (
+        KEY_COLUMNS + ("label_id",),
+        ("source_run_id", "observed_at"),
+    )
+
+
+def test_lineage_columns_default_to_none(passthrough_filter: Mock) -> None:
+    feeds = {ISSUES: make_feed(), LABELS: make_feed()}
+    spark = make_spark(feeds)
+
+    _ = changed_issue_keys(
+        spark,
+        issues_table=ISSUES,
+        issues_range=ChangeRange(2, 3),
+        issue_labels_table=LABELS,
+        issue_labels_range=ChangeRange(2, 3),
+    )
+
+    assert all(call.args[2] == () for call in passthrough_filter.call_args_list)
