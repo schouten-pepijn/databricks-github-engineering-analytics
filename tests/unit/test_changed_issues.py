@@ -45,6 +45,20 @@ def make_feed() -> Mock:
     return Mock()
 
 
+@pytest.fixture(autouse=True)
+def passthrough_filter(mocker) -> Mock:
+    """Treat the no-op filter as identity in the wiring tests.
+
+    The filter is Spark logic. It is proven live with build_cdf_projection.py,
+    not with mocks, so these unit tests only check how it is called.
+    """
+
+    def keep_all_rows(feed: Mock, row_key: tuple[str, ...], lineage_columns) -> Mock:
+        return feed
+
+    return mocker.patch(f"{MODULE}._real_changes", side_effect=keep_all_rows)
+
+
 def test_a_change_range_must_not_be_negative_or_reversed() -> None:
     with pytest.raises(ValueError, match="start_version"):
         _ = ChangeRange(start_version=-1, end_version=3)
