@@ -180,7 +180,7 @@ def enable_change_feed(spark: SparkSession, table: str) -> None:
     made before the switch are not recorded, so a range that starts earlier
     fails with DELTA_MISSING_CHANGE_DATA.
     """
-    spark.sql(
+    _ = spark.sql(
         f"ALTER TABLE {table} SET TBLPROPERTIES ('delta.enableChangeDataFeed' = 'true')"
     )
 
@@ -221,7 +221,7 @@ def latest_version(spark: SparkSession, table: str) -> int:
 
 def main() -> None:
     """Build the projection and compare the workset with the expected answer."""
-    require_test_catalog(CATALOG)
+    _ = require_test_catalog(CATALOG)
     spark = (
         DatabricksSession.builder.profile("databricks-dev").serverless().getOrCreate()
     )

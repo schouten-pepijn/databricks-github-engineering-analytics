@@ -50,21 +50,21 @@ def prove_the_workset(spark: SparkSession) -> None:
 
 def prove_the_failure(spark: SparkSession) -> None:
     """A range that predates the moment CDF was switched on must fail clearly."""
-    spark.sql(f"DROP TABLE IF EXISTS {LATE_CDF}")
+    _ = spark.sql(f"DROP TABLE IF EXISTS {LATE_CDF}")
     try:
-        spark.sql(
+        _ = spark.sql(
             f"CREATE TABLE {LATE_CDF} "
-            "(repository_owner STRING, repository_name STRING, issue_id BIGINT)"
+            + "(repository_owner STRING, repository_name STRING, issue_id BIGINT)"
         )
-        spark.sql(f"INSERT INTO {LATE_CDF} VALUES ('psf', 'requests', 1)")
-        spark.sql(
+        _ = spark.sql(f"INSERT INTO {LATE_CDF} VALUES ('psf', 'requests', 1)")
+        _ = spark.sql(
             f"ALTER TABLE {LATE_CDF} "
-            "SET TBLPROPERTIES ('delta.enableChangeDataFeed' = 'true')"
+            + "SET TBLPROPERTIES ('delta.enableChangeDataFeed' = 'true')"
         )
-        spark.sql(f"UPDATE {LATE_CDF} SET issue_id = 2 WHERE issue_id = 1")
+        _ = spark.sql(f"UPDATE {LATE_CDF} SET issue_id = 2 WHERE issue_id = 1")
 
         try:
-            changed_issue_keys(
+            _ = changed_issue_keys(
                 spark,
                 issues_table=LATE_CDF,
                 issues_range=ChangeRange(0, 3),  # predates the SET TBLPROPERTIES
@@ -77,12 +77,12 @@ def prove_the_failure(spark: SparkSession) -> None:
             raise SystemExit("CHECK FAILED: the late-CDF range did not fail")
     finally:
         # Always clean up the scratch table, even when a check fails.
-        spark.sql(f"DROP TABLE IF EXISTS {LATE_CDF}")
+        _ = spark.sql(f"DROP TABLE IF EXISTS {LATE_CDF}")
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--failure-proof", action="store_true")
+    _ = parser.add_argument("--failure-proof", action="store_true")
     arguments = parser.parse_args()
 
     session = (

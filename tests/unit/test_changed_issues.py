@@ -26,7 +26,12 @@ def make_spark(feeds: dict[str, Mock]) -> Mock:
     reader = Mock()
     # Every .option(...) call returns the same reader, like the real chain.
     reader.option.return_value = reader
-    reader.table.side_effect = lambda name: feeds[name]
+
+    def lookup(name: str) -> Mock:
+        """Return the mock feed for one table name."""
+        return feeds[name]
+
+    reader.table.side_effect = lookup
     spark = Mock()
     spark.read = reader
     return spark
@@ -39,10 +44,10 @@ def make_feed() -> Mock:
 
 def test_a_change_range_must_not_be_negative_or_reversed() -> None:
     with pytest.raises(ValueError, match="start_version"):
-        ChangeRange(start_version=-1, end_version=3)
+        _ = ChangeRange(start_version=-1, end_version=3)
 
     with pytest.raises(ValueError, match="end_version"):
-        ChangeRange(start_version=5, end_version=4)
+        _ = ChangeRange(start_version=5, end_version=4)
 
 
 def test_a_single_version_range_is_allowed() -> None:
@@ -53,7 +58,7 @@ def test_each_table_is_read_with_its_own_pinned_range() -> None:
     feeds = {ISSUES: make_feed(), LABELS: make_feed()}
     spark = make_spark(feeds)
 
-    changed_issue_keys(
+    _ = changed_issue_keys(
         spark,
         issues_table=ISSUES,
         issues_range=ChangeRange(2, 3),
@@ -72,7 +77,7 @@ def test_only_the_business_key_columns_are_selected() -> None:
     feeds = {ISSUES: make_feed(), LABELS: make_feed()}
     spark = make_spark(feeds)
 
-    changed_issue_keys(
+    _ = changed_issue_keys(
         spark,
         issues_table=ISSUES,
         issues_range=ChangeRange(2, 3),
@@ -117,7 +122,7 @@ def test_an_unavailable_range_raises_a_clear_error_naming_the_table(
     )
 
     with pytest.raises(ChangeRangeUnavailableError, match=failing) as info:
-        changed_issue_keys(
+        _ = changed_issue_keys(
             spark,
             issues_table=ISSUES,
             issues_range=ChangeRange(2, 3),
@@ -135,7 +140,7 @@ def test_a_failing_range_stops_the_union_from_being_built() -> None:
     feeds[ISSUES].limit.return_value.collect.side_effect = PySparkException("x")
 
     with pytest.raises(ChangeRangeUnavailableError):
-        changed_issue_keys(
+        _ = changed_issue_keys(
             spark,
             issues_table=ISSUES,
             issues_range=ChangeRange(2, 3),

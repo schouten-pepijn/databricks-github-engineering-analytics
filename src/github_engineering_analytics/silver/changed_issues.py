@@ -63,12 +63,12 @@ def _read_change_keys(
         # Reading one row is the cheapest action, and it forces Delta to check
         # the range right now. Without this, a bad range would fail later, in a
         # step that has nothing to do with the range.
-        feed.limit(1).collect()
+        _ = feed.limit(1).collect()
     except PySparkException as exc:
         raise ChangeRangeUnavailableError(
             f"Change feed of {table} is unavailable for versions "
-            f"{version_range.start_version} to {version_range.end_version}; "
-            "decide whether to bootstrap or replay."
+            + f"{version_range.start_version} to {version_range.end_version}; "
+            + "decide whether to bootstrap or replay."
         ) from exc
 
     # Every change type (insert, update, delete) carries the key. An update is
