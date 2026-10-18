@@ -231,6 +231,37 @@ tasks:
         uv run dbt build --project-dir dbt --profiles-dir dbt
         --select tag:gold
 
+  # The docs need the snapshot vars, because the staging models read them while
+  # compiling. Pass them on the command line, for example:
+  #   task dbt:docs SNAPSHOT_MANIFEST_ID=manifest-... SNAPSHOT_START_DATE=2026-10-12 SNAPSHOT_END_DATE=2026-10-16
+  dbt:docs:
+    desc: Generate the dbt documentation and catalog (needs the snapshot vars)
+    requires:
+      vars:
+        - SNAPSHOT_MANIFEST_ID
+        - SNAPSHOT_START_DATE
+        - SNAPSHOT_END_DATE
+    cmds:
+      - >-
+        uv run dbt docs generate --project-dir dbt --profiles-dir dbt
+        --vars '{"snapshot_manifest_id": "{{.SNAPSHOT_MANIFEST_ID}}",
+        "snapshot_start_date": "{{.SNAPSHOT_START_DATE}}",
+        "snapshot_end_date": "{{.SNAPSHOT_END_DATE}}"}'
+
+  dbt:docs:serve:
+    desc: Open the dbt documentation in a local browser (needs the snapshot vars)
+    requires:
+      vars:
+        - SNAPSHOT_MANIFEST_ID
+        - SNAPSHOT_START_DATE
+        - SNAPSHOT_END_DATE
+    cmds:
+      - >-
+        uv run dbt docs serve --project-dir dbt --profiles-dir dbt
+        --vars '{"snapshot_manifest_id": "{{.SNAPSHOT_MANIFEST_ID}}",
+        "snapshot_start_date": "{{.SNAPSHOT_START_DATE}}",
+        "snapshot_end_date": "{{.SNAPSHOT_END_DATE}}"}'
+
   monitor:health:test:
     desc: Show recent TEST pipeline lifecycles and committed watermarks
     requires:
