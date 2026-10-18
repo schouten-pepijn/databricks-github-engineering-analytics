@@ -22,6 +22,7 @@ from pyspark.sql.types import (
 
 from github_engineering_analytics.common.config import PipelineConfig
 from github_engineering_analytics.common.delta_contracts import (
+    ensure_change_data_feed,
     quote_multipart_identifier,
     require_utc_spark_session,
 )
@@ -284,6 +285,10 @@ class DeltaSilverIssueWriter:
                 f"{quote_multipart_identifier(self._table_name)} "
                 "ADD COLUMNS (author_user_id BIGINT)"
             )
+
+        # Switch the change feed on after the table exists and before any data
+        # is written. It is not retroactive.
+        ensure_change_data_feed(self._spark, self._table_name)
 
     def upsert(self, records: Sequence[SilverIssue]) -> None:
         """Merge valid records without allowing one batch to duplicate a key."""

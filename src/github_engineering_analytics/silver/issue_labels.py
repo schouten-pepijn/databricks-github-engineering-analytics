@@ -20,6 +20,7 @@ from pyspark.sql.types import (
 
 from github_engineering_analytics.common.config import PipelineConfig
 from github_engineering_analytics.common.delta_contracts import (
+    ensure_change_data_feed,
     quote_multipart_identifier,
     require_utc_spark_session,
 )
@@ -172,6 +173,10 @@ class DeltaSilverIssueLabelWriter:
             "source_run_id STRING NOT NULL"
             ") USING DELTA"
         )
+
+        # Switch the change feed on after the table exists and before any data
+        # is written. It is not retroactive.
+        ensure_change_data_feed(self._spark, self._table_name)
 
     def reconcile_dataframe(
         self,
