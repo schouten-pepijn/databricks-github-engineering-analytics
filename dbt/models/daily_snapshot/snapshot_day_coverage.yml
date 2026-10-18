@@ -1,0 +1,31 @@
+version: 2
+
+# Unit test for snapshot_day_coverage. dbt runs it against the fixture rows
+# below instead of real tables, so the expected output is checked exactly.
+unit_tests:
+  - name: day_coverage_shows_a_gap_between_two_runs
+    model: snapshot_day_coverage
+    overrides:
+      vars:
+        snapshot_start_date: "2026-10-10"
+        snapshot_end_date: "2026-10-12"
+    given:
+      # format: sql, because stg_manifest_runs is ephemeral: no table exists
+      # that dbt could read the column types from. The SQL also fixes the types.
+      - input: ref('stg_manifest_runs')
+        format: sql
+        rows: |
+          select
+              'manifest_test' as manifest_id,
+              'run_a' as run_id,
+              timestamp'2026-10-10 18:00:00' as finished_at
+          union all
+          select
+              'manifest_test',
+              'run_b',
+              timestamp'2026-10-12 18:00:00'
+    expect:
+      rows:
+        - { snapshot_date: "2026-10-10", coverage: observed }
+        - { snapshot_date: "2026-10-11", coverage: missing }
+        - { snapshot_date: "2026-10-12", coverage: observed }
