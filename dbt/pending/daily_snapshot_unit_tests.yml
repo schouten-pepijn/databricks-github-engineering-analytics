@@ -1,6 +1,7 @@
 version: 2
 
-# Fixture for the Sprint 3 daily snapshot models.
+# Fixture for the Sprint 3 daily snapshot models. Tests here are not active
+# until their model exists; see the note below before moving one.
 #
 # NOT ACTIVE YET. This file sits outside model-paths on purpose: a unit test
 # for a model that does not exist makes `dbt parse` fail for the whole project,
