@@ -1,0 +1,56 @@
+resources:
+  jobs:
+    github_daily_snapshot:
+      name: "[TEST] GitHub daily snapshot"
+      description: >-
+        TEST only, started by hand. Builds the daily snapshot models in
+        github_analytics_snapshot from one replay manifest. It reads Bronze at
+        the version the manifest locked. It never calls GitHub and never changes
+        Silver, Gold, the control tables or the watermark.
+
+      # Snapshot builds overwrite the same tables, so two at once would race.
+      max_concurrent_runs: 1
+
+      # Supplied when the job is started:
+      #   databricks bundle run -t test github_daily_snapshot \
+      #     --params manifest_id=<id>,start_date=2026-10-12,end_date=2026-10-16
+      # Empty defaults make a forgotten value fail, instead of reading the wrong
+      # manifest or an empty date range.
+      parameters:
+        - name: manifest_id
+          default: ""
+        - name: start_date
+          default: ""
+        - name: end_date
+          default: ""
+
+      tasks:
+        - task_key: build_snapshots
+          environment_key: dbt
+
+          # A rebuild only overwrites its own tables, so a retry is harmless.
+          # Keep it off until the manual route is proven.
+          max_retries: 0
+
+          dbt_task:
+            source: WORKSPACE
+            project_directory: ${workspace.file_path}/dbt
+            warehouse_id: ${var.sql_warehouse_id}
+            catalog: ${var.catalog}
+            schema: github_analytics_snapshot
+            commands:
+              # The var JSON is one shell argument. The single quotes keep the
+              # double quotes inside it intact.
+              - >-
+                dbt build --select daily_snapshot --vars
+                '{"snapshot_manifest_id": "{{job.parameters.manifest_id}}",
+                "snapshot_start_date": "{{job.parameters.start_date}}",
+                "snapshot_end_date": "{{job.parameters.end_date}}"}'
+
+      environments:
+        - environment_key: dbt
+          spec:
+            environment_version: "3"
+            dependencies:
+              # Match the locally pinned adapter version.
+              - dbt-databricks==1.12.3

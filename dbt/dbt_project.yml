@@ -25,4 +25,6 @@ vars:
   date_dimension_end: "2035-12-31"
 
 models:
-  github_engineering_analytics: {}
+  github_engineering_analytics:
+    daily_snapshot:
+      +schema: github_analytics_snapshot
