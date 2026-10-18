@@ -230,6 +230,8 @@ def main() -> None:
     config = PipelineConfig(
         catalog=CATALOG, bronze_schema=SCRATCH_SCHEMA, silver_schema=SCRATCH_SCHEMA
     )
+    # Start from empty scratch tables. If they already exist, the commit
+    # versions would not match the numbers this script expects, so refuse to run.
     check(
         not spark.catalog.tableExists(config.bronze_issues_table),
         f"{config.bronze_issues_table} exists; drop the scratch schema first",
@@ -281,18 +283,16 @@ def main() -> None:
         issues_range=ChangeRange(baseline["issues"] + 1, end["issues"]),
         issue_labels_table=config.silver_issue_labels_table,
         issue_labels_range=ChangeRange(baseline["labels"] + 1, end["labels"]),
+        # A MERGE rewrites re-observed rows and changes only these lineage
+        # columns, so they must not make an update look like a real change.
+        issues_lineage_columns=("source_run_id",),
+        issue_labels_lineage_columns=("source_run_id", "observed_at"),
     )
     issue_ids = sorted(row["issue_id"] for row in keys.collect())
 
-    expected = {1, 2, 3, 4}
-    check(expected <= set(issue_ids), f"missing changed Issues: {issue_ids}")
-    check(set(issue_ids) - expected <= {5}, f"unexpected Issues: {issue_ids}")
-    print(
-        {
-            "workset": issue_ids,
-            "issue_5_in_workset_without_a_real_change": 5 in issue_ids,
-        }
-    )
+    # Exactly the Issues that really changed. Issue 5 was only re-observed.
+    check(issue_ids == [1, 2, 3, 4], f"unexpected workset: {issue_ids}")
+    print({"workset": issue_ids, "issue_5_excluded": 5 not in issue_ids})
     print("OK")
 
 
