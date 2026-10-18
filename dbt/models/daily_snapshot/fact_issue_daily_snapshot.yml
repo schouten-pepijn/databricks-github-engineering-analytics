@@ -41,6 +41,8 @@ unit_tests:
     expect:
       rows:
         - {
+            issue_key: "067e6f7a3b5d955aa90b63e8feed956b85156b0d26cfd699e1eccb2572cfca4a",
+            repository_key: "cfca81838540c7f2327a1d4bc9b802d9c88e41fae787f2abd27938605baa3f35",
             snapshot_date: "2026-10-10",
             repository_owner: psf,
             repository_name: requests,
@@ -52,6 +54,8 @@ unit_tests:
             manifest_id: manifest_test,
           }
         - {
+            issue_key: "067e6f7a3b5d955aa90b63e8feed956b85156b0d26cfd699e1eccb2572cfca4a",
+            repository_key: "cfca81838540c7f2327a1d4bc9b802d9c88e41fae787f2abd27938605baa3f35",
             snapshot_date: "2026-10-12",
             repository_owner: psf,
             repository_name: requests,

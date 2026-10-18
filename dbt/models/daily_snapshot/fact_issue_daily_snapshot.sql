@@ -43,6 +43,26 @@ ranked as (
 )
 
 select
+    -- Keep both hashes identical to fact_issue.issue_key and
+    -- dim_repository.repository_key, so a snapshot row joins to those tables.
+    sha2(
+        concat(
+            repository_owner,
+            '||',
+            repository_name,
+            '||',
+            cast(issue_id as string)
+        ),
+        256
+    ) as issue_key,
+    sha2(
+        concat(
+            repository_owner,
+            '||',
+            repository_name
+        ),
+        256
+    ) as repository_key,
     snapshot_date,
     repository_owner,
     repository_name,
