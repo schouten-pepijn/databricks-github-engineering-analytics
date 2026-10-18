@@ -178,4 +178,7 @@ no longer exist as rows, and the next pipeline run is a full load again.
 | Timestamps shifted by hours when read locally | Databricks Connect returns naive local time. Compare in Spark (`to_date`, UTC session) rather than in Python. |
 | Run stuck in `running` | See [recovering failed runs](03-pipeline.md#when-something-fails). |
 
+Related: [6. Change Data Feed](06-change-data-feed.md) covers the scratch scripts
+and the integration tests for finding changed Issues.
+
 Back to the [README](../README.md).

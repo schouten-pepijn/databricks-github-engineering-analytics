@@ -47,6 +47,7 @@ Read in this order. Each document stands on the previous one.
 | 3 | [The pipeline](docs/03-pipeline.md) | The job DAG, what each task does, the run lifecycle, and how failures are handled. |
 | 4 | [Replay and snapshots](docs/04-replay-and-snapshots.md) | Manifests, replaying the past, and daily backlog snapshots. |
 | 5 | [Operations](docs/05-operations.md) | Environments, commands, jobs, testing, releases, resetting, and troubleshooting. |
+| 6 | [Change Data Feed](docs/06-change-data-feed.md) | How to find only the Issues that changed between two Delta versions, the rules that are easy to get wrong, and what is not done yet. |
 
 ## Where things live
 
@@ -106,10 +107,12 @@ Built and proven on the TEST catalog:
   and a run lifecycle that only commits progress after Gold passed.
 - Immutable replay manifests and replay of Bronze into isolated Silver tables.
 - Daily snapshot models with their own manual Job.
+- A tool that finds the Issues that changed between two Delta versions, using the
+  Change Data Feed ([details](docs/06-change-data-feed.md)). It is proven on small
+  tables, but it is not switched on for the real tables and no job uses it yet.
 
-Not built yet: reading Delta Change Data Feed, an incremental Gold build, Auto
-Loader ingestion and a Lakeflow comparison. They are planned learning steps, not
-features.
+Not built yet: an incremental Gold build, Auto Loader ingestion and a Lakeflow
+comparison. They are planned learning steps, not features.
 
 One proof is still open: the snapshot logic for a *changing* backlog (an issue
 that closes, a label that is removed) is proven on a fixture, but the real data
