@@ -37,6 +37,45 @@ Defined as targets in [`databricks.yml`](../databricks.yml).
 
 Deploying is always a deliberate act: nothing deploys on its own.
 
+### Why replays and snapshots run only in TEST
+
+This is a **choice**, not a technical limit. Each environment has its own job:
+
+| Environment | Its job in this project |
+|---|---|
+| `dev` | Reserved for the integration tests, which **empty tables** in a dedicated DEV catalog. Nothing you want to keep belongs there. |
+| `test` | Experiments, replays, snapshots and the evidence that something works. It is the place where breaking things is allowed. |
+| `prod` | Only what is already proven. |
+
+Replays and snapshots are *learning tools*: they write new tables and read frozen
+history. Keeping them in TEST keeps the blast radius small while the ideas are
+still being learned, and keeps experimental output away from the live watermark and
+the real Gold tables.
+
+How strongly this is enforced differs:
+
+- **Replay: enforced in code.** It refuses any catalog that does not end in
+  `_test`, and writes only to a fixed schema (`github_analytics_v2min`).
+- **Snapshots: a convention.** The Job is named `[TEST] ...`, but the models would
+  run in any catalog you deploy to.
+- **Jobs travel with the bundle.** Both Jobs are defined once in `resources/` and
+  are deployed to whichever target you deploy (the replay Job also appears under
+  `dev` if you deploy there). The replay's guard is what protects you, not its location.
+
+The long Bronze history that replays depend on was also set up **for TEST only**:
+the TEST Bronze table keeps 30 days of Delta history. The other catalogs keep
+Delta's defaults, so a replay there could fail because the Bronze version it needs
+is already gone.
+
+**To run them outside TEST you would have to:**
+
+1. Relax the `_test` guard on purpose, and decide per environment whether that is acceptable.
+2. Choose where the output lives and who may read it.
+3. Raise the Bronze history retention to cover the versions you want to reproduce.
+4. For daily snapshots, add a schedule (today they are started by hand) and monitoring.
+
+Until there is a reason to do that, TEST is the right place.
+
 ## Jobs
 
 All jobs are defined in [`resources/`](../resources) and deployed together.
@@ -77,6 +116,7 @@ Run `task --list` for the full list. The ones you will use most:
 | `task dbt:build-gold` | Build every Gold model. |
 | `task dbt:test-sources` | Run the Silver contract tests. |
 | `task dbt:docs SNAPSHOT_MANIFEST_ID=... SNAPSHOT_START_DATE=... SNAPSHOT_END_DATE=...` | Generate dbt documentation. The vars are required because the staging models read them. |
+| `task test:baseline` | Run the TEST pipeline Job once, then show the run and watermark. Use it to give TEST a known starting point after a reset. It does not deploy. |
 | `task monitor:health:test` | Recent runs and the committed watermark. |
 | `task version:patch` / `minor` / `major` | Cut a release (see below). |
 
