@@ -95,6 +95,9 @@ A replay refuses to run outside a `*_test` catalog; this is enforced in code. Th
 daily snapshot Job is a TEST job by convention (it is named and meant for TEST) but
 the code does not enforce it.
 
+Why these tools stay in TEST, and what it would take to move them, is explained in
+[Operations](docs/05-operations.md#why-replays-and-snapshots-run-only-in-test).
+
 ## Status
 
 Built and proven on the TEST catalog:
