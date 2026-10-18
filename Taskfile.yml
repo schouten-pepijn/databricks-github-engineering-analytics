@@ -264,6 +264,23 @@ tasks:
         "snapshot_start_date": "{{.SNAPSHOT_START_DATE}}",
         "snapshot_end_date": "{{.SNAPSHOT_END_DATE}}"}'
 
+  # Gives TEST a known starting point after a reset: one full pipeline run, then
+  # the health check. It does NOT deploy; it runs the Job that is already
+  # deployed to the test target. On a catalog that already has data this is just
+  # a normal incremental run.
+  test:baseline:
+    desc: >-
+      Run the TEST pipeline Job once (Bronze to Gold, finalize) and show the
+      resulting run and watermark. Calls the GitHub API and writes to TEST.
+    requires:
+      vars:
+        - DATABRICKS_CONFIG_PROFILE
+        - DATABRICKS_TEST_CATALOG
+        - DATABRICKS_SQL_WAREHOUSE_ID
+    cmds:
+      - databricks bundle run --target test github_issues_full_load
+      - task: monitor:health:test
+
   monitor:health:test:
     desc: Show recent TEST pipeline lifecycles and committed watermarks
     requires:
