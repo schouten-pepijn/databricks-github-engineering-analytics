@@ -213,7 +213,17 @@ _GOLD_AND_REPLAY_TABLES = (
     "test_catalog.github_analytics_gold.bridge_issue_label",
     "test_catalog.github_analytics_gold.fact_issue",
     "test_catalog.github_analytics_gold.smoke_connection",
-    "test_catalog.github_analytics_control.replay_manifests",
+)
+_SNAPSHOT_TABLES = (
+    "test_catalog.github_analytics_snapshot.snapshot_day_coverage",
+    "test_catalog.github_analytics_snapshot.fact_issue_daily_snapshot",
+    "test_catalog.github_analytics_snapshot.bridge_issue_label_daily_snapshot",
+)
+_REPLAY_MANIFEST_TABLE = "test_catalog.github_analytics_control.replay_manifests"
+_INCLUDE_ALL_TABLES = (
+    *_GOLD_AND_REPLAY_TABLES,
+    *_SNAPSHOT_TABLES,
+    _REPLAY_MANIFEST_TABLE,
 )
 
 
@@ -225,7 +235,8 @@ def test_default_reset_leaves_gold_and_replay_manifests_alone() -> None:
 
     assert result.truncated_tables == _PYTHON_OWNED_TABLES
     assert not any(
-        "gold" in name or "replay_manifests" in name for name in result.truncated_tables
+        "gold" in name or "snapshot" in name or "replay_manifests" in name
+        for name in result.truncated_tables
     )
 
 
@@ -235,13 +246,17 @@ def test_include_all_also_truncates_gold_and_replay_manifests() -> None:
 
     result = reset_catalog(spark=spark, catalog="test_catalog", include_all=True)
 
-    assert result.truncated_tables == _PYTHON_OWNED_TABLES + _GOLD_AND_REPLAY_TABLES
+    assert result.truncated_tables == _PYTHON_OWNED_TABLES + _INCLUDE_ALL_TABLES
     assert result.skipped_tables == ()
     assert call(
         "TRUNCATE TABLE `test_catalog`.`github_analytics_gold`.`fact_issue`"
     ) in (spark.sql.call_args_list)
     assert call(
         "TRUNCATE TABLE `test_catalog`.`github_analytics_control`.`replay_manifests`"
+    ) in (spark.sql.call_args_list)
+    assert call(
+        "TRUNCATE TABLE `test_catalog`.`github_analytics_snapshot`"
+        ".`fact_issue_daily_snapshot`"
     ) in (spark.sql.call_args_list)
 
 
@@ -258,7 +273,7 @@ def test_include_all_skips_relations_that_do_not_exist() -> None:
         "test_catalog.github_analytics_gold.smoke_connection",
         "test_catalog.github_analytics_control.replay_manifests",
     )
-    assert len(result.truncated_tables) == 13
+    assert len(result.truncated_tables) == 16
 
 
 def test_main_forwards_include_all_to_the_reset(mocker) -> None:
@@ -277,4 +292,4 @@ def test_main_forwards_include_all_to_the_reset(mocker) -> None:
         include_all=True,
     )
 
-    assert result.skipped_tables == _PYTHON_OWNED_TABLES + _GOLD_AND_REPLAY_TABLES
+    assert result.skipped_tables == _PYTHON_OWNED_TABLES + _INCLUDE_ALL_TABLES
