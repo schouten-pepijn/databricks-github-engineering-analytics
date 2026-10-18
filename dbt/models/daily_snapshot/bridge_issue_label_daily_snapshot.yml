@@ -31,6 +31,8 @@ unit_tests:
     expect:
       rows:
         - {
+            issue_key: "067e6f7a3b5d955aa90b63e8feed956b85156b0d26cfd699e1eccb2572cfca4a",
+            label_key: "ebabc6453fff58613477d3111d0a1894f14e30cea3c2e0e9b4bd7301e0228d0a",
             snapshot_date: "2026-10-10",
             repository_owner: psf,
             repository_name: requests,

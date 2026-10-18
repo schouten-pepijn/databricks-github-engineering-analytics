@@ -6,6 +6,27 @@
 {{ config(materialized='table') }}
 
 select
+    -- Keep both hashes identical to bridge_issue_label.issue_key and label_key.
+    sha2(
+        concat(
+            snapshot.repository_owner,
+            '||',
+            snapshot.repository_name,
+            '||',
+            cast(snapshot.issue_id as string)
+        ),
+        256
+    ) as issue_key,
+    sha2(
+        concat(
+            snapshot.repository_owner,
+            '||',
+            snapshot.repository_name,
+            '||',
+            cast(labels.label_id as string)
+        ),
+        256
+    ) as label_key,
     snapshot.snapshot_date,
     snapshot.repository_owner,
     snapshot.repository_name,
