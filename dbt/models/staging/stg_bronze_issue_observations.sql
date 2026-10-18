@@ -3,6 +3,7 @@
 -- version it locked. This is the history that Silver does not keep.
 {{ config(materialized='ephemeral') }}
 
+-- Read the manifest ID from the var once, and reuse it below.
 {% set manifest_id = var('snapshot_manifest_id') %}
 
 {#
@@ -11,7 +12,10 @@
   with the manifest. run_query only works at execution time, so the first
   parsing pass gets a placeholder.
 #}
+-- "execute" is false during dbt's first pass, which only reads the project
+-- structure. On that pass no database is available, so we skip the lookup.
 {% if execute %}
+    -- Ask the control table which Bronze version this manifest locked.
     {% set version_query %}
         select bronze_version
         from {{ source('control', 'replay_manifests') }}
@@ -36,11 +40,15 @@ with manifest as (
 ),
 
 bronze as (
+    -- Delta time travel: read the table as it was at the locked version.
+    -- Later appends to Bronze cannot change what this model sees.
     select *
     from {{ source('bronze', 'github_issues_raw') }}
         version as of {{ bronze_version }}
 ),
 
+-- Only observations from runs the manifest locked are kept. The join
+-- narrows the rows to this manifest's repository.
 parsed as (
     select
         manifest.manifest_id,
