@@ -76,7 +76,11 @@ USER = {
 
 
 def check(condition: bool, message: str) -> None:
-    """Fail loudly; unlike assert, this check remains active under python -0."""
+    """Fail loudly; unlike assert, this check remains active under python -O.
+
+    A plain assert is removed when Python runs with -O, so a check written with
+    assert could silently pass. A SystemExit always stops the script.
+    """
     if not condition:
         raise SystemExit(f"CHECK FAILED: {message}")
 
@@ -86,8 +90,9 @@ def payload(
     *,
     state: str,
     updated_at: str,
-    # Sequence and Mapping are covariant, so a list of label dicts with mixed
-    # value types is accepted. list and dict are invariant and would not be.
+    # Sequence and Mapping are covariant: a list of label dicts with mixed value
+    # types (str, int, bool, None) is accepted. list and dict are invariant, so
+    # the type checker would reject the same list typed as list[dict[str, object]].
     labels: Sequence[Mapping[str, object]],
     created_at: str = "2026-10-09T08:00:00Z",
     closed_at: str | None = None,
@@ -115,6 +120,11 @@ RUN_1 = [
 ]
 
 # Run 2 changes four Issues, and re-observes Issue 5 exactly as it was.
+#
+# Issue 5 keeps its updated_at. The Silver MERGE uses updated_at >= target, so
+# the row still matches and is rewritten. Business values stay the same, but
+# Delta records an update pair anyway. That is the "no-op update" that the next
+# step filters out. It is the reason this scenario includes Issue 5.
 RUN_2 = [
     payload(
         1,
@@ -160,14 +170,28 @@ def append_bronze_run(
 
 
 def enable_change_feed(spark: SparkSession, table: str) -> None:
-    """Switch the change feed on for an empty table, before any delta commit."""
+    """Switch the change feed on for an empty table, before any data commit.
+
+    Why ALTER TABLE and not a session setting: the session default for the
+    change feed is not available on serverless compute (it fails with
+    CONFIG_NOT_AVAILABLE). Setting it per table works everywhere.
+
+    Why before the first commit: the change feed is not retroactive. Commits
+    made before the switch are not recorded, so a range that starts earlier
+    fails with DELTA_MISSING_CHANGE_DATA.
+    """
     spark.sql(
         f"ALTER TABLE {table} SET TBLPROPERTIES ('delta.enableChangeDataFeed' = 'true')"
     )
 
 
 def run_silver(spark: SparkSession, config: PipelineConfig, run_id: str) -> None:
-    """Run the four Silver stages of the pipeline for one Bronze run."""
+    """Run the four Silver stages of the pipeline for one Bronze run.
+
+    The filter on _run_id reads only this run's rows, as the real pipeline does.
+    The order matters: Issues, users and labels first, then the Issue-label
+    reconciliation, which needs the observed Issues from its transformer.
+    """
     bronze = spark.table(config.bronze_issues_table).where(F.col("_run_id") == run_id)
 
     issues = DeltaSilverIssueWriter(spark=spark, config=config)
@@ -186,7 +210,11 @@ def run_silver(spark: SparkSession, config: PipelineConfig, run_id: str) -> None
 
 
 def latest_version(spark: SparkSession, table: str) -> int:
-    """Return the newest Delta version of a table."""
+    """Return the newest Delta version of a table.
+
+    DESCRIBE HISTORY lists every commit, newest first, with a version number
+    per commit. The maximum version is the last commit written so far.
+    """
     rows = spark.sql(f"DESCRIBE HISTORY {table}").agg(F.max("version")).collect()
     return int(rows[0][0])
 
@@ -245,6 +273,8 @@ def main() -> None:
     print({"baseline_versions": baseline, "end_versions": end})
 
     # Each table has its own version numbers, so each gets its own range.
+    # The range starts one version after the baseline: the baseline commits
+    # belong to run 1, and reading them again would count them as changes.
     keys = changed_issue_keys(
         spark,
         issues_table=config.silver_issues_table,

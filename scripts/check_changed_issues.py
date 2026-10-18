@@ -24,7 +24,11 @@ LATE_CDF = f"{SCHEMA}.s4_fx_late_cdf"
 
 
 def check(condition: bool, message: str) -> None:
-    """Fail loudly; unlike assert, this check remains active under python -O."""
+    """Fail loudly; unlike assert, this check remains active under python -O.
+
+    A plain assert is removed when Python runs with -O, so a check written with
+    assert could silently pass. A SystemExit always stops the script.
+    """
     if not condition:
         raise SystemExit(f"CHECK FAILED: {message}")
 

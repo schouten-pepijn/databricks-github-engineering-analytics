@@ -45,7 +45,12 @@ def _read_change_keys(
     table: str,
     version_range: ChangeRange,
 ) -> DataFrame:
-    """Return the distinct Issue keys that changed in one table's range."""
+    """Return the distinct Issue keys that changed in one table's range.
+
+    The option names are the Spark reader options for the change feed:
+    "readChangeFeed" switches the feed on for this read, and the two version
+    options pick the commits to include. Both ends are inclusive.
+    """
     feed = (
         spark.read.option("readChangeFeed", "true")
         .option("startingVersion", version_range.start_version)
@@ -54,7 +59,10 @@ def _read_change_keys(
     )
 
     try:
-        # Spark is lazy: We do a one row read to surface failures early
+        # Spark is lazy: nothing is read until an action such as collect() runs.
+        # Reading one row is the cheapest action, and it forces Delta to check
+        # the range right now. Without this, a bad range would fail later, in a
+        # step that has nothing to do with the range.
         feed.limit(1).collect()
     except PySparkException as exc:
         raise ChangeRangeUnavailableError(
@@ -63,8 +71,13 @@ def _read_change_keys(
             "decide whether to bootstrap or replay."
         ) from exc
 
-    # Every change type (insert, update, delete) carries the key, and an update
-    # appears twice (before and after), so keep each key once.
+    # Every change type (insert, update, delete) carries the key. An update is
+    # stored as two rows: update_preimage (the old version) and update_postimage
+    # (the new version). Both carry the same key, so keep each key once.
+    #
+    # Caution: a MERGE that matches a row rewrites it, even when no business
+    # value changed. That shows up here as an update pair. Filtering those out
+    # is a separate step, so this function still returns them for now.
     return feed.select(*KEY_COLUMNS).distinct()
 
 
@@ -78,9 +91,10 @@ def changed_issue_keys(
 ) -> DataFrame:
     """Return the keys of every Issue affected in either feed, once each.
 
-    An Issue whose labels changed but whose own row did not (for example its
-    last label was removed) only shows up in the label feed, which is why both
-    feeds are read.
+    This is a union, not an intersection: an Issue counts when it changed in
+    either table. An Issue whose labels changed but whose own row did not (for
+    example its last label was removed) only shows up in the label feed, which
+    is why both feeds are read.
     """
     issue_keys = _read_change_keys(spark, issues_table, issues_range)
     label_keys = _read_change_keys(spark, issue_labels_table, issue_labels_range)

@@ -17,7 +17,12 @@ LABELS = "test_catalog.silver.github_issue_labels"
 
 
 def make_spark(feeds: dict[str, Mock]) -> Mock:
-    """A Spark mock whose change-feed reader returns one mock feed per table."""
+    """A Spark mock whose change-feed reader returns one mock feed per table.
+
+    These unit tests check the wiring only: which options are set, which
+    columns are selected, and how errors are handled. They do not prove that
+    Delta returns the right rows. The live check in scripts/ does that.
+    """
     reader = Mock()
     # Every .option(...) call returns the same reader, like the real chain.
     reader.option.return_value = reader
