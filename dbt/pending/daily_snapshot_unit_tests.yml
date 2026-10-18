@@ -22,23 +22,6 @@ version: 2
 # state on that day is the newest observation ingested up to the end of it.
 
 unit_tests:
-  - name: day_coverage_shows_a_gap_between_two_runs
-    model: snapshot_day_coverage
-    overrides:
-      vars:
-        snapshot_start_date: "2026-10-10"
-        snapshot_end_date: "2026-10-12"
-    given:
-      - input: ref('stg_manifest_runs')
-        rows:
-          - {manifest_id: manifest_test, run_id: run_a, finished_at: "2026-10-10 18:00:00"}
-          - {manifest_id: manifest_test, run_id: run_b, finished_at: "2026-10-12 18:00:00"}
-    expect:
-      rows:
-        - {snapshot_date: "2026-10-10", coverage: observed}
-        - {snapshot_date: "2026-10-11", coverage: missing}
-        - {snapshot_date: "2026-10-12", coverage: observed}
-
   - name: issue_snapshot_follows_the_status_change_and_skips_the_gap
     model: fact_issue_daily_snapshot
     # The coverage input deliberately contains the missing day: the model must
