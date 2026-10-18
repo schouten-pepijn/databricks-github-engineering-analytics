@@ -175,15 +175,14 @@ The two live scripts work on scratch objects in TEST.
 - `build_cdf_projection.py` builds its own scratch schema from scratch, and refuses
   to run if that schema already exists. It is repeatable: drop the schema
   `github_analytics_s4_projection` first, then run it.
-- `check_changed_issues.py` reads two fixture tables (`s4_fx_issues` and
-  `s4_fx_issue_labels` in `github_analytics_v2min`). These were removed after the
-  proof and are **not** recreated by the script, so it fails until they exist
-  again. Treat it as a one-off proof, not a repeatable test.
+- `check_changed_issues.py` proves the failure case. It creates one scratch table
+  with the change feed switched on *late*, asks for a range that starts before
+  that, and expects the one clear error. It creates and drops its own table, so
+  nothing needs to exist beforehand and it can be run any time.
 
 ```bash
-uv run python scripts/build_cdf_projection.py                  # builds the scratch projection
-uv run python scripts/check_changed_issues.py                  # needs the fixture tables
-uv run python scripts/check_changed_issues.py --failure-proof  # also proves the error
+uv run python scripts/build_cdf_projection.py   # proves the right Issues are found
+uv run python scripts/check_changed_issues.py   # proves an unreadable range fails clearly
 ```
 
 ## What is not done yet
