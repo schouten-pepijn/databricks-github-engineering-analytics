@@ -169,22 +169,6 @@ def append_bronze_run(
     DeltaBronzeIssueWriter(spark=spark, config=config).append(records)
 
 
-def enable_change_feed(spark: SparkSession, table: str) -> None:
-    """Switch the change feed on for an empty table, before any data commit.
-
-    Why ALTER TABLE and not a session setting: the session default for the
-    change feed is not available on serverless compute (it fails with
-    CONFIG_NOT_AVAILABLE). Setting it per table works everywhere.
-
-    Why before the first commit: the change feed is not retroactive. Commits
-    made before the switch are not recorded, so a range that starts earlier
-    fails with DELTA_MISSING_CHANGE_DATA.
-    """
-    _ = spark.sql(
-        f"ALTER TABLE {table} SET TBLPROPERTIES ('delta.enableChangeDataFeed' = 'true')"
-    )
-
-
 def run_silver(spark: SparkSession, config: PipelineConfig, run_id: str) -> None:
     """Run the four Silver stages of the pipeline for one Bronze run.
 
@@ -237,8 +221,10 @@ def main() -> None:
         f"{config.bronze_issues_table} exists; drop the scratch schema first",
     )
 
-    # The tables must exist, with the change feed on, before the first data
-    # commit: the feed is not retroactive.
+    # Create every table first. The Issues and Issue-label writers switch the
+    # change feed on inside ensure_table, before any data is written: the feed is
+    # not retroactive, so a later switch would miss the first commits. The users
+    # and labels tables do not need the feed, and their writers leave it off.
     DeltaBronzeIssueWriter(spark=spark, config=config).ensure_table()
     for writer in (
         DeltaSilverIssueWriter(spark=spark, config=config),
@@ -247,13 +233,6 @@ def main() -> None:
         DeltaSilverIssueLabelWriter(spark=spark, config=config),
     ):
         writer.ensure_table()
-    for table in (
-        config.silver_issues_table,
-        config.silver_users_table,
-        config.silver_labels_table,
-        config.silver_issue_labels_table,
-    ):
-        enable_change_feed(spark, table)
 
     append_bronze_run(
         spark, config, "s4_run_1", datetime(2026, 10, 10, 10, 0, tzinfo=UTC), RUN_1
@@ -283,10 +262,6 @@ def main() -> None:
         issues_range=ChangeRange(baseline["issues"] + 1, end["issues"]),
         issue_labels_table=config.silver_issue_labels_table,
         issue_labels_range=ChangeRange(baseline["labels"] + 1, end["labels"]),
-        # A MERGE rewrites re-observed rows and changes only these lineage
-        # columns, so they must not make an update look like a real change.
-        issues_lineage_columns=("source_run_id",),
-        issue_labels_lineage_columns=("source_run_id", "observed_at"),
     )
     issue_ids = sorted(row["issue_id"] for row in keys.collect())
 
