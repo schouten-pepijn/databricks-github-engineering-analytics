@@ -1,17 +1,23 @@
 """Unit tests for the changed-Issue workset builder."""
 
+from dataclasses import fields
 from unittest.mock import Mock
 
 import pytest
 from pyspark.errors import PySparkException
 
 from github_engineering_analytics.silver.changed_issues import (
+    ISSUE_LABEL_ROW_KEY,
+    ISSUE_LABELS_LINEAGE_COLUMNS,
+    ISSUES_LINEAGE_COLUMNS,
     KEY_COLUMNS,
     ChangeRange,
     ChangeRangeUnavailableError,
     business_columns,
     changed_issue_keys,
 )
+from github_engineering_analytics.silver.issue_labels import SilverIssueLabel
+from github_engineering_analytics.silver.issues import DeltaSilverIssueWriter
 
 MODULE = "github_engineering_analytics.silver.changed_issues"
 
@@ -200,7 +206,22 @@ def test_an_unknown_lineage_column_is_rejected_by_name() -> None:
         _ = business_columns(FEED_COLUMNS, lineage_columns=("no_such_column",))
 
 
-def test_each_table_is_filtered_with_its_own_row_key_and_lineage(
+def test_lineage_constants_name_the_lineage_columns() -> None:
+    assert ISSUES_LINEAGE_COLUMNS == ("source_run_id",)
+    assert ISSUE_LABELS_LINEAGE_COLUMNS == ("source_run_id", "observed_at")
+
+
+def test_lineage_constants_exist_in_the_silver_tables() -> None:
+    # If a Silver column is renamed, this fails, so the filter cannot silently
+    # stop filtering.
+    issue_columns = {field.name for field in DeltaSilverIssueWriter._ROW_SCHEMA}
+    label_columns = {field.name for field in fields(SilverIssueLabel)}
+
+    assert set(ISSUES_LINEAGE_COLUMNS) <= issue_columns
+    assert set(ISSUE_LABELS_LINEAGE_COLUMNS) <= label_columns
+
+
+def test_changed_issue_keys_uses_the_constants_without_arguments(
     passthrough_filter: Mock,
 ) -> None:
     feeds = {ISSUES: make_feed(), LABELS: make_feed()}
@@ -212,29 +233,8 @@ def test_each_table_is_filtered_with_its_own_row_key_and_lineage(
         issues_range=ChangeRange(2, 3),
         issue_labels_table=LABELS,
         issue_labels_range=ChangeRange(2, 3),
-        issues_lineage_columns=("source_run_id",),
-        issue_labels_lineage_columns=("source_run_id", "observed_at"),
     )
 
     calls = {c.args[0]: c.args[1:] for c in passthrough_filter.call_args_list}
-    # A label is identified by the Issue key plus its label id; an Issue by the key.
-    assert calls[feeds[ISSUES]] == (KEY_COLUMNS, ("source_run_id",))
-    assert calls[feeds[LABELS]] == (
-        KEY_COLUMNS + ("label_id",),
-        ("source_run_id", "observed_at"),
-    )
-
-
-def test_lineage_columns_default_to_none(passthrough_filter: Mock) -> None:
-    feeds = {ISSUES: make_feed(), LABELS: make_feed()}
-    spark = make_spark(feeds)
-
-    _ = changed_issue_keys(
-        spark,
-        issues_table=ISSUES,
-        issues_range=ChangeRange(2, 3),
-        issue_labels_table=LABELS,
-        issue_labels_range=ChangeRange(2, 3),
-    )
-
-    assert all(call.args[2] == () for call in passthrough_filter.call_args_list)
+    assert calls[feeds[ISSUES]] == (KEY_COLUMNS, ISSUES_LINEAGE_COLUMNS)
+    assert calls[feeds[LABELS]] == (ISSUE_LABEL_ROW_KEY, ISSUE_LABELS_LINEAGE_COLUMNS)
