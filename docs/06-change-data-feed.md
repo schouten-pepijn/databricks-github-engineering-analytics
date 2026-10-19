@@ -106,8 +106,6 @@ workset = changed_issue_keys(
     issues_range=ChangeRange(start_version=3, end_version=3),
     issue_labels_table=config.silver_issue_labels_table,
     issue_labels_range=ChangeRange(start_version=3, end_version=3),
-    issues_lineage_columns=("source_run_id",),
-    issue_labels_lineage_columns=("source_run_id", "observed_at"),
 )
 ```
 
@@ -115,7 +113,7 @@ workset = changed_issue_keys(
 |---|---|
 | `ChangeRange` | The versions to read **for one table**, both ends inclusive. It refuses a negative or reversed range. |
 | `changed_issue_keys` | Reads both feeds and returns each affected Issue key once. |
-| `*_lineage_columns` | Columns that say where a row came from, such as `source_run_id`. A change in them alone is not a real change. The default is none, which keeps every value column. |
+| `ISSUES_LINEAGE_COLUMNS`, `ISSUE_LABELS_LINEAGE_COLUMNS` | Module constants that name the lineage columns of each Silver table, such as `source_run_id`. A change in them alone is not a real change. The caller does not pass them, so they cannot be forgotten. |
 | `ChangeRangeUnavailableError` | One clear error when a range cannot be read. It names the table and the versions and says to decide between a bootstrap and a replay. |
 
 ### How the "real change" filter works
