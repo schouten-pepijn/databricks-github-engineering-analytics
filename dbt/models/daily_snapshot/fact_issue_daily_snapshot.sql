@@ -12,6 +12,12 @@ with observed_days as (
 
 -- Pair each observed day with every observation that already existed by the
 -- end of that day. One Issue therefore appears once per earlier observation.
+-- An observation made on a day with no coverage still counts from the next
+-- observed day on, because it was ingested before that day ended.
+--
+-- Cost note: this pairs every observed day with every earlier observation, so
+-- the work grows with days times observations. That is fine at today's size;
+-- Sprint 8 measures it.
 candidates as (
     select
         observed_days.snapshot_date,
@@ -69,9 +75,11 @@ select
     issue_id,
     state,
     state = 'open' as is_open_on_date,
-    -- Whole days between creation and the snapshot date.
+    -- Whole days between creation and the snapshot date. Both dates use the
+    -- time zone of the SQL warehouse session, which is UTC by default.
     datediff(snapshot_date, to_date(created_at)) as age_days,
     run_id as observation_run_id,
+    -- When the pipeline read this observation, not when the Issue changed.
     ingested_at as observed_at,
     manifest_id
 from ranked

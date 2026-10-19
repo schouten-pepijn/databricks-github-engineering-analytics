@@ -15,7 +15,7 @@ with dates as (
 ),
 
 run_days as (
-    -- to_date() used the session timezone; Databricks runs in UTC.
+    -- to_date() uses the session timezone; SQL warehouses run in UTC by default.
     select distinct to_date(finished_at) as run_date
     from {{ ref('stg_manifest_runs') }}
 )
