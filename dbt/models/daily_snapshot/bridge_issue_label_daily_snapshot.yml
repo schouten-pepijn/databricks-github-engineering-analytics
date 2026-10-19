@@ -1,5 +1,35 @@
 version: 2
 
+# Data tests run on the real table after every build. The unit test further
+# down checks the logic on a fixture; these check the real result.
+models:
+  - name: bridge_issue_label_daily_snapshot
+    description: >
+      The labels each Issue had at the end of every observed UTC day, taken from
+      the same observation that fact_issue_daily_snapshot picked for that day.
+    data_tests:
+      # The grain: one Issue-label pair per observed day. A duplicate here
+      # would mean one run observed the same Issue twice, which would double its
+      # labels in the join.
+      - unique_combination_of_columns:
+          arguments:
+            combination_of_columns:
+              - snapshot_date
+              - repository_owner
+              - repository_name
+              - issue_id
+              - label_id
+    columns:
+      - name: issue_key
+        data_tests:
+          - not_null
+      - name: label_key
+        data_tests:
+          - not_null
+      - name: snapshot_date
+        data_tests:
+          - not_null
+
 unit_tests:
   - name: removed_label_stays_on_the_old_date_only
     model: bridge_issue_label_daily_snapshot

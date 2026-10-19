@@ -1,5 +1,30 @@
 version: 2
 
+# Data tests run on the real table after every build. The unit test further
+# down checks the logic on a fixture; these check the real result.
+models:
+  - name: snapshot_day_coverage
+    description: >
+      One row per calendar date between the snapshot bounds. A date is observed
+      when a successful run of the manifest finished on it, otherwise missing.
+    data_tests:
+      - unique_combination_of_columns:
+          arguments:
+            combination_of_columns:
+              - snapshot_date
+    columns:
+      - name: snapshot_date
+        data_tests:
+          - not_null
+      - name: coverage
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values:
+                  - observed
+                  - missing
+
 # Unit test for snapshot_day_coverage. dbt runs it against the fixture rows
 # below instead of real tables, so the expected output is checked exactly.
 unit_tests:

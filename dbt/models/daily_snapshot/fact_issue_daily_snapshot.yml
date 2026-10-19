@@ -1,5 +1,32 @@
 version: 2
 
+# Data tests run on the real table after every build. The unit test further
+# down checks the logic on a fixture; these check the real result.
+models:
+  - name: fact_issue_daily_snapshot
+    description: >
+      The state of each Issue at the end of every observed UTC day. Missing days
+      have no rows at all, so a gap never reads as an empty backlog.
+    data_tests:
+      # The grain: one row per Issue per observed day.
+      - unique_combination_of_columns:
+          arguments:
+            combination_of_columns:
+              - snapshot_date
+              - repository_owner
+              - repository_name
+              - issue_id
+    columns:
+      - name: issue_key
+        data_tests:
+          - not_null
+      - name: snapshot_date
+        data_tests:
+          - not_null
+      - name: manifest_id
+        data_tests:
+          - not_null
+
 unit_tests:
   - name: issue_snapshot_follows_the_status_change_and_skips_the_gap
     model: fact_issue_daily_snapshot
