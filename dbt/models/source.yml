@@ -7,7 +7,9 @@ sources:
     description: >
       Current-state Silver Delta tables written and owned by the Python
       ingestion pipeline. dbt reads these relations but never writes to them.
-    schema: github_analytics_silver
+    # The schema is a variable, so a proof build can read a frozen copy of Silver
+    # (see dbt/macros/generate_schema_name.sql for the matching safety net)
+    schema: "{{ var('silver_schema', 'github_analytics_silver') }}"
 
     tables:
       - name: github_issues

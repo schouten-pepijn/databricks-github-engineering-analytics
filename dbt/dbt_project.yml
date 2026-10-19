@@ -26,5 +26,9 @@ vars:
 
 models:
   github_engineering_analytics:
+    gold:
+      # By default the Gold models go to the target schema. A proof
+      # build sets gold_output_schema to write somewhere else instead.
+      +schema: "{{ var('gold_output_schema', target.schema) }}"
     daily_snapshot:
       +schema: github_analytics_snapshot
