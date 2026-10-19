@@ -1,9 +1,12 @@
+from pathlib import Path
 from unittest.mock import Mock, call
 
 import pytest
+import yaml
 from typer.testing import CliRunner
 
 from github_engineering_analytics.common.catalog_reset import (
+    _SNAPSHOT_SCHEMA,
     CatalogResetResult,
     _require_confirmed_catalog,
     app,
@@ -293,3 +296,16 @@ def test_main_forwards_include_all_to_the_reset(mocker) -> None:
     )
 
     assert result.skipped_tables == _PYTHON_OWNED_TABLES + _INCLUDE_ALL_TABLES
+
+
+def test_snapshot_schema_matches_the_dbt_project_config() -> None:
+    """The reset must empty the schema that dbt builds the snapshots into.
+
+    The schema name is written in two places: dbt_project.yml and the reset
+    code. If one changes alone, the reset would silently skip the snapshots.
+    """
+    project_file = Path(__file__).parents[2] / "dbt" / "dbt_project.yml"
+    config = yaml.safe_load(project_file.read_text(encoding="utf-8"))
+
+    models = config["models"]["github_engineering_analytics"]
+    assert models["daily_snapshot"]["+schema"] == _SNAPSHOT_SCHEMA
