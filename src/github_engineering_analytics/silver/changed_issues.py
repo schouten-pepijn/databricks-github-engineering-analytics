@@ -31,6 +31,13 @@ KEY_COLUMNS = ("repository_owner", "repository_name", "issue_id")
 # otherwise a real label change could hide behind an unchanged label.
 ISSUE_LABEL_ROW_KEY = (*KEY_COLUMNS, "label_id")
 
+# The lineage columns of each Silver table: columns that say where a row came
+# from. They are fixed here instead of passed in by the caller, so a caller
+# cannot leave them out and let a MERGE rewrite count as a real change.
+ISSUES_LINEAGE_COLUMNS = ("source_run_id",)
+ISSUE_LABELS_LINEAGE_COLUMNS = ("source_run_id", "observed_at")
+
+
 # Columns that Delta adds to every change feed row. They describe the change,
 # not the data, so they never count as a business value.
 CDF_METADATA_COLUMNS = ("_change_type", "_commit_version", "_commit_timestamp")
@@ -170,8 +177,6 @@ def changed_issue_keys(
     issues_range: ChangeRange,
     issue_labels_table: str,
     issue_labels_range: ChangeRange,
-    issues_lineage_columns: Sequence[str] = (),
-    issue_labels_lineage_columns: Sequence[str] = (),
 ) -> DataFrame:
     """Return the keys of every Issue really affected in either feed, once each.
 
@@ -180,18 +185,18 @@ def changed_issue_keys(
     example its last label was removed) only shows up in the label feed, which
     is why both feeds are read.
 
-    Lineage columns are ignored when deciding whether an update is a change.
-    With the default (none), every value column counts.
+    The lineage columns come from the module constants, so a caller cannot
+    leave them out.
     """
     issue_keys = _read_change_keys(
-        spark, issues_table, issues_range, KEY_COLUMNS, issues_lineage_columns
+        spark, issues_table, issues_range, KEY_COLUMNS, ISSUES_LINEAGE_COLUMNS
     )
     label_keys = _read_change_keys(
         spark,
         issue_labels_table,
         issue_labels_range,
         ISSUE_LABEL_ROW_KEY,
-        issue_labels_lineage_columns,
+        ISSUE_LABELS_LINEAGE_COLUMNS,
     )
 
     # An Issue that changed in both feeds appears once, not twice.
