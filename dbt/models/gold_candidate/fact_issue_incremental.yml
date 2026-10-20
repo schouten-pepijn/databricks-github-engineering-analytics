@@ -1,0 +1,140 @@
+version: 2
+
+models:
+  - name: fact_issue_incremental
+    description: >
+      Incremental candidate of fact_issue. Not served to BI; a proof compares it
+      with a full build of fact_issue over the same frozen Silver input.
+
+unit_tests:
+  - name: incremental_run_reads_only_the_issues_in_the_workset
+    model: fact_issue_incremental
+    # Pretend the table already exists, so the incremental branch is rendered.
+    overrides:
+      macros:
+        is_incremental: true
+    given:
+      - input: source('silver', 'github_issues')
+        format: sql
+        rows: |
+          select 'psf' as repository_owner, 'requests' as repository_name,
+              cast(1 as bigint) as issue_id, cast(1 as bigint) as issue_number,
+              'one' as title, 'closed' as state, false as is_pull_request,
+              cast(9001 as bigint) as author_user_id,
+              timestamp'2026-10-09 08:00:00' as created_at,
+              timestamp'2026-10-12 09:00:00' as updated_at,
+              timestamp'2026-10-12 09:00:00' as closed_at,
+              'run_2' as source_run_id
+          union all
+          select 'psf', 'requests', cast(5 as bigint), cast(5 as bigint),
+              'five', 'open', false, cast(9001 as bigint),
+              timestamp'2026-10-09 08:00:00', timestamp'2026-10-09 11:00:00',
+              cast(null as timestamp), 'run_1'
+      - input: source('workset', 'changed_issues')
+        format: sql
+        rows: |
+          select 'psf' as repository_owner, 'requests' as repository_name,
+              cast(1 as bigint) as issue_id
+      - input: this
+        format: sql
+        rows: |
+          select cast(null as string) as issue_key,
+              cast(null as string) as repository_key,
+              cast(null as string) as author_key,
+              cast(null as int) as created_date_key,
+              cast(null as int) as updated_date_key,
+              cast(null as int) as closed_date_key,
+              cast(null as string) as repository_owner,
+              cast(null as string) as repository_name,
+              cast(null as bigint) as issue_id,
+              cast(null as bigint) as issue_number,
+              cast(null as string) as title, cast(null as string) as state,
+              cast(null as boolean) as is_pull_request,
+              cast(null as bigint) as author_user_id,
+              cast(null as timestamp) as created_at,
+              cast(null as timestamp) as updated_at,
+              cast(null as timestamp) as closed_at,
+              cast(null as string) as source_run_id
+          where false
+    expect:
+      # Issue 5 is not in the workset, so it is not read and not merged.
+      format: sql
+      rows: |
+        select
+            sha2('psf||requests||1', 256) as issue_key,
+            sha2('psf||requests', 256) as repository_key,
+            sha2('9001', 256) as author_key,
+            20261009 as created_date_key,
+            20261012 as updated_date_key,
+            20261012 as closed_date_key,
+            'psf' as repository_owner, 'requests' as repository_name,
+            cast(1 as bigint) as issue_id, cast(1 as bigint) as issue_number,
+            'one' as title, 'closed' as state, false as is_pull_request,
+            cast(9001 as bigint) as author_user_id,
+            timestamp'2026-10-09 08:00:00' as created_at,
+            timestamp'2026-10-12 09:00:00' as updated_at,
+            timestamp'2026-10-12 09:00:00' as closed_at,
+            'run_2' as source_run_id
+
+  - name: first_run_reads_all_of_silver
+    model: fact_issue_incremental
+    overrides:
+      macros:
+        is_incremental: false
+    given:
+      - input: source('silver', 'github_issues')
+        format: sql
+        rows: |
+          select 'psf' as repository_owner, 'requests' as repository_name,
+              cast(5 as bigint) as issue_id, cast(5 as bigint) as issue_number,
+              'five' as title, 'open' as state, false as is_pull_request,
+              cast(9001 as bigint) as author_user_id,
+              timestamp'2026-10-09 08:00:00' as created_at,
+              timestamp'2026-10-09 11:00:00' as updated_at,
+              cast(null as timestamp) as closed_at,
+              'run_1' as source_run_id
+      # The workset is not read on a first run, but dbt wants every source given.
+      - input: source('workset', 'changed_issues')
+        format: sql
+        rows: |
+          select 'x' as repository_owner, 'y' as repository_name,
+              cast(0 as bigint) as issue_id
+      - input: this
+        format: sql
+        rows: |
+          select cast(null as string) as issue_key,
+              cast(null as string) as repository_key,
+              cast(null as string) as author_key,
+              cast(null as int) as created_date_key,
+              cast(null as int) as updated_date_key,
+              cast(null as int) as closed_date_key,
+              cast(null as string) as repository_owner,
+              cast(null as string) as repository_name,
+              cast(null as bigint) as issue_id,
+              cast(null as bigint) as issue_number,
+              cast(null as string) as title, cast(null as string) as state,
+              cast(null as boolean) as is_pull_request,
+              cast(null as bigint) as author_user_id,
+              cast(null as timestamp) as created_at,
+              cast(null as timestamp) as updated_at,
+              cast(null as timestamp) as closed_at,
+              cast(null as string) as source_run_id
+          where false
+    expect:
+      format: sql
+      rows: |
+        select
+            sha2('psf||requests||5', 256) as issue_key,
+            sha2('psf||requests', 256) as repository_key,
+            sha2('9001', 256) as author_key,
+            20261009 as created_date_key,
+            20261009 as updated_date_key,
+            cast(null as int) as closed_date_key,
+            'psf' as repository_owner, 'requests' as repository_name,
+            cast(5 as bigint) as issue_id, cast(5 as bigint) as issue_number,
+            'five' as title, 'open' as state, false as is_pull_request,
+            cast(9001 as bigint) as author_user_id,
+            timestamp'2026-10-09 08:00:00' as created_at,
+            timestamp'2026-10-09 11:00:00' as updated_at,
+            cast(null as timestamp) as closed_at,
+            'run_1' as source_run_id
