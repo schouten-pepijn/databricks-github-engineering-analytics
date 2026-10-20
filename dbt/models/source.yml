@@ -107,6 +107,28 @@ sources:
             description: GitHub label identifier in the relationship business key.
             data_tests:
               - not_null
+  # The changed-Issue keys of ONE batch, written by the Python pipeline
+  # (orchestration/workset_table.py). Only the incremental candidate models read
+  # it. The default schema is a scratch schema, never a live one.
+  - name: workset
+    description: >
+      Keys of the Issues whose Silver rows really changed in one batch.
+      Replaced on every batch, so it never holds more than one batch.
+    schema: "{{ var('workset_schema', 'github_analytics_s5_workset_proof') }}"
+
+    tables:
+      - name: changed_issues
+        description: One row per changed Issue, with only the business key.
+        columns:
+          - name: repository_owner
+            data_tests:
+              - not_null
+          - name: repository_name
+            data_tests:
+              - not_null
+          - name: issue_id
+            data_tests:
+              - not_null
   # Python also owns the control tables. The snapshot model read them to learn
   # which runs a manifest locked and when those runs finished. dbt never writes
   # to them.

@@ -35,3 +35,20 @@ def test_the_schema_macro_refuses_a_proof_build_without_an_output_schema() -> No
     # output schema would overwrite the real Gold tables with proof data.
     assert "var('silver_schema', none) is not none" in macro
     assert "var('gold_output_schema', none) is none" in macro
+
+
+def test_candidate_models_follow_the_same_output_schema_rule_as_gold() -> None:
+    project = yaml.safe_load((DBT / "dbt_project.yml").read_text(encoding="utf-8"))
+    candidate = project["models"]["github_engineering_analytics"]["gold_candidate"]
+
+    assert candidate["+schema"] == "{{ var('gold_output_schema', target.schema) }}"
+
+
+def test_workset_source_defaults_to_a_scratch_schema() -> None:
+    sources = yaml.safe_load(
+        (DBT / "models" / "source.yml").read_text(encoding="utf-8")
+    )
+    workset = next(s for s in sources["sources"] if s["name"] == "workset")
+
+    # The default must carry the scratch prefix, never a live schema name.
+    assert "github_analytics_s5_" in workset["schema"]

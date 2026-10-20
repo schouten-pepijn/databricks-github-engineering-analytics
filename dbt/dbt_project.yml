@@ -32,3 +32,7 @@ models:
       +schema: "{{ var('gold_output_schema', target.schema) }}"
     daily_snapshot:
       +schema: github_analytics_snapshot
+    gold_candidate:
+      # Same output schema rule as gold, so a proof can build the candidate and
+      # the full models in two different schemas and compare them.
+      +schema: "{{ var('gold_output_schema', target.schema) }}"
