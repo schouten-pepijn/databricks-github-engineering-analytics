@@ -86,3 +86,12 @@ class PipelineConfig:
     def replay_manifest_table(self) -> str:
         """Return immutable replay-input boundaries for diagnosis and replay."""
         return f"{self.catalog}.{self.control_schema}.replay_manifests"
+
+    @property
+    def cdf_consumer_positions_table(self) -> str:
+        """Return the Change Data Feed positions of the incremental consumers.
+
+        Per consumer and source table: up to which Delta version it has processed.
+        This is pipeline state, not an analytical source.
+        """
+        return f"{self.catalog}.{self.control_schema}.cdf_consumer_positions"
