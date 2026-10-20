@@ -1,0 +1,47 @@
+version: 2
+
+models:
+  - name: bridge_issue_label_incremental
+    description: >
+      Incremental candidate of bridge_issue_label. Old rows of the workset Issues
+      are deleted by a pre-hook; this select appends their current rows.
+
+unit_tests:
+  - name: incremental_run_selects_only_the_current_labels_of_workset_issues
+    model: bridge_issue_label_incremental
+    overrides:
+      macros:
+        is_incremental: true
+    given:
+      - input: source('silver', 'github_issue_labels')
+        format: sql
+        rows: |
+          select 'psf' as repository_owner, 'requests' as repository_name,
+              cast(1 as bigint) as issue_id, cast(100 as bigint) as label_id
+          union all
+          select 'psf', 'requests', cast(5 as bigint), cast(100 as bigint)
+      - input: source('workset', 'changed_issues')
+        format: sql
+        rows: |
+          select 'psf' as repository_owner, 'requests' as repository_name,
+              cast(1 as bigint) as issue_id
+          union all
+          -- Issue 2 lost its last label: it is in the workset, but has no
+          -- Silver rows, so it adds nothing (the pre-hook removes its old rows).
+          select 'psf', 'requests', cast(2 as bigint)
+      - input: this
+        format: sql
+        rows: |
+          select cast(null as string) as issue_key, cast(null as string) as label_key,
+              cast(null as string) as repository_owner,
+              cast(null as string) as repository_name,
+              cast(null as bigint) as issue_id, cast(null as bigint) as label_id
+          where false
+    expect:
+      format: sql
+      rows: |
+        select
+            sha2('psf||requests||1', 256) as issue_key,
+            sha2('psf||requests||100', 256) as label_key,
+            'psf' as repository_owner, 'requests' as repository_name,
+            cast(1 as bigint) as issue_id, cast(100 as bigint) as label_id
