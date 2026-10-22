@@ -187,10 +187,11 @@ uv run python scripts/check_changed_issues.py   # proves an unreadable range fai
 
 Be clear about the limits of what was proven:
 
-- **CDF is off on the real tables.** The real Bronze and Silver tables on TEST do
-  not have it, and the Silver writers do not switch it on. Because CDF is not
-  retroactive, the history before it is enabled can never be recovered. Turning it
-  on for the real Silver tables is a decision for the next step, not a given.
+- **CDF is off on the real tables until the code is deployed.** The Issues and
+  Issue-label Silver writers now switch it on when they ensure their table (only if
+  it is not already on), but the real TEST tables only get it after the wheel is
+  deployed and a pipeline run has called `ensure_table`. Because CDF is not
+  retroactive, the history before it is enabled can never be recovered.
 - **No real Job runtime.** The checks ran through Databricks Connect and on a SQL
   warehouse, not inside a deployed Job on the serverless environment the Jobs use.
 - **No real change in real data.** The proof uses invented runs. The real TEST data
@@ -203,5 +204,7 @@ Be clear about the limits of what was proven:
   Handling it is a separate design question.
 - **Cost is not measured.** The filter pairs rows with a join. That is fine for
   7,233 Issues; the cost on larger tables has not been measured.
+
+The next page builds on this one: [7. The incremental Gold candidate](07-incremental-gold-candidate.md).
 
 Back to the [README](../README.md).

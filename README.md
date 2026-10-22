@@ -48,6 +48,7 @@ Read in this order. Each document stands on the previous one.
 | 4 | [Replay and snapshots](docs/04-replay-and-snapshots.md) | Manifests, replaying the past, and daily backlog snapshots. |
 | 5 | [Operations](docs/05-operations.md) | Environments, commands, jobs, testing, releases, resetting, and troubleshooting. |
 | 6 | [Change Data Feed](docs/06-change-data-feed.md) | How to find only the Issues that changed between two Delta versions, the rules that are easy to get wrong, and what is not done yet. |
+| 7 | [Incremental Gold candidate](docs/07-incremental-gold-candidate.md) | Building only the changed Issues, proving the result equals a full build, and moving the consumer positions last. |
 
 ## Where things live
 
@@ -56,7 +57,7 @@ src/github_engineering_analytics/   Python package (becomes the deployable wheel
   api/            GitHub REST client
   bronze/         extraction and the append-only Bronze writer
   silver/         normalization and MERGE logic per entity, plus replay
-  control/        runs, watermark and replay manifests (state, not analytics)
+  control/        runs, watermark, replay manifests and CDF positions (state, not analytics)
   orchestration/  the entry points a Databricks job calls
   common/         naming (PipelineConfig), Delta helpers, test-catalog reset
 dbt/              Gold and snapshot models, source contracts, dbt tests
@@ -108,11 +109,15 @@ Built and proven on the TEST catalog:
 - Immutable replay manifests and replay of Bronze into isolated Silver tables.
 - Daily snapshot models with their own manual Job.
 - A tool that finds the Issues that changed between two Delta versions, using the
-  Change Data Feed ([details](docs/06-change-data-feed.md)). It is proven on small
-  tables, but it is not switched on for the real tables and no job uses it yet.
+  Change Data Feed ([details](docs/06-change-data-feed.md)).
+- An incremental Gold candidate for `fact_issue` and `bridge_issue_label`, proven
+  equal to a full build, with consumer positions that move only after a successful
+  comparison ([details](docs/07-incremental-gold-candidate.md)). Both are proven on
+  invented runs in scratch schemas, not switched on for the real tables, and no job
+  uses them yet.
 
-Not built yet: an incremental Gold build, Auto Loader ingestion and a Lakeflow
-comparison. They are planned learning steps, not features.
+Not built yet: Auto Loader ingestion and a Lakeflow comparison. They are planned
+learning steps, not features.
 
 One proof is still open: the snapshot logic for a *changing* backlog (an issue
 that closes, a label that is removed) is proven on a fixture, but the real data

@@ -179,6 +179,8 @@ no longer exist as rows, and the next pipeline run is a full load again.
 | Run stuck in `running` | See [recovering failed runs](03-pipeline.md#when-something-fails). |
 
 Related: [6. Change Data Feed](06-change-data-feed.md) covers the scratch scripts
-and the integration tests for finding changed Issues.
+and the integration tests for finding changed Issues, and
+[7. The incremental Gold candidate](07-incremental-gold-candidate.md) covers the
+scratch schemas and scripts of the incremental build.
 
 Back to the [README](../README.md).
